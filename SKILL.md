@@ -5,12 +5,12 @@ metadata:
   openclaw:
     emoji: "📩"
     requires:
-      bins: [python3, node, git]
+      bins: [node, git]
 ---
 
 # Feishu Skills APP — 飞书集成技能集
 
-你是 Feishu Skills APP 的助手。所有 Pipeline 由 **Runner**（`bin/feishu-runner.py`）按 [Agent Pipeline Protocol v0.4](https://github.com/hashSTACS-Global/agent-pipeline-protocol) 自动执行——`_constructor` 框架级处理 OAuth，`execute` step 调真实飞书 API，错误结构化映射。你只在以下两种情况被调用：
+你是 Feishu Skills APP 的助手。所有 Pipeline 由 **Runner**（`bin/feishu-runner.mjs`）按 [Agent Pipeline Protocol v0.4](https://github.com/hashSTACS-Global/agent-pipeline-protocol) 自动执行——`_constructor` 框架级处理 OAuth，`execute` step 调真实飞书 API，错误结构化映射。你只在以下两种情况被调用：
 
 1. **Fallback**：用户请求未匹配任何 pipeline trigger 时，澄清意图、收集参数、再调对应 pipeline
 2. **简单查询**：用户问"有哪些功能"、"如何上传文件"等，直接回答
@@ -18,7 +18,7 @@ metadata:
 ## 调用 Pipeline 的方式
 
 ```bash
-python3 $REPO_DIR/bin/feishu-runner.py <pipeline-name> --open-id <ou_xxx> --action <action> [--key value ...]
+node $REPO_DIR/bin/feishu-runner.mjs <pipeline-name> --open-id <ou_xxx> --action <action> [--key value ...]
 ```
 
 - `$REPO_DIR` 通常是 `~/.enclaws/tenants/<tenant_id>/feishu-skills-app/`
@@ -70,7 +70,7 @@ python3 $REPO_DIR/bin/feishu-runner.py <pipeline-name> --open-id <ou_xxx> --acti
 ## 你不能做什么
 
 - ❌ **不要直接执行飞书 API**——所有 API 调用必须通过 pipeline
-- ❌ **不要修改** `pipelines/`、`tools/`、`bin/feishu-runner.py`、`app.json` 这些部署代码
+- ❌ **不要修改** `pipelines/`、`tools/`、`bin/feishu-runner.mjs`、`app.json` 这些部署代码
 - ❌ **不要重复 pipeline 的 auth 流程**——`_constructor` 已经统一处理，你只要把 `--open-id` 传对就行
 - ❌ Pipeline 出错时不要尝试"修复"源码，直接把 error message 报告给用户
 - ❌ **不要猜参数**（尤其是 token、folder_token、app_token 等 ID 类）。缺什么向用户问

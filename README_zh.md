@@ -27,7 +27,7 @@
                 ┌──────────────────────────────────────┐
                 │  EC bot (LLM) — 读 SKILL.md          │
                 │  匹配意图 → 调 pipeline                │
-                │  via:  python bin/feishu-runner.py   │
+                │  via:  node bin/feishu-runner.mjs    │
                 └──────────────┬───────────────────────┘
                                │
                                ▼
@@ -85,10 +85,10 @@ export FEISHU_APP_ID="cli_xxx"
 export FEISHU_APP_SECRET="xxx"
 
 # 列出 pipeline
-python bin/feishu-runner.py list
+node bin/feishu-runner.mjs list
 
 # 跑 pipeline
-python bin/feishu-runner.py im-message \
+node bin/feishu-runner.mjs im-message \
   --open-id ou_xxx \
   --action send \
   --receive-id ou_yyy \
@@ -106,7 +106,7 @@ feishu-skills-app/
 ├── app.json                    # APP 元数据（api_version: v0.4）
 ├── feishu-skills.yaml          # 版本清单（升级流程使用）
 ├── bin/
-│   ├── feishu-runner.py        # Pipeline Runner（独立 Python 程序）
+│   ├── feishu-runner.mjs       # Pipeline Runner（独立 Node.js 程序）
 │   └── feishu-app-install.sh   # EC/OpenClaw 安装脚本
 ├── pipelines/
 │   ├── _constructor/           # auth + token 刷新（自动先执行）
@@ -139,12 +139,13 @@ feishu-skills-app/
 
 Constructor 生命周期测试（无需凭证）：
 ```bash
-python -c "
-import json, subprocess, sys
-result = subprocess.run([sys.executable, 'bin/feishu-runner.py', 'list'],
-                       capture_output=True, text=True)
-print(json.loads(result.stdout))
-"
+node bin/feishu-runner.mjs list
+```
+
+集成测试（仅开发期需要 Python + pytest）：
+```bash
+pip install pytest
+python -m pytest tests/integration/test_constructor_lifecycle.py -v
 ```
 
 完整端到端实测：见 [tests/manual/poc_e2e.md](tests/manual/poc_e2e.md)。

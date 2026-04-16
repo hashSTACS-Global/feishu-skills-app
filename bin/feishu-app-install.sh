@@ -40,9 +40,9 @@ version_lt() {
 # ---------------------------------------------------------------------------
 TENANT_ROOT="$(pwd | sed -E 's|(.*/\.enclaws/tenants/[^/]+).*|\1|')"
 if [ "$TENANT_ROOT" = "$(pwd)" ] || [ ! -d "$TENANT_ROOT" ]; then
-  echo "未检测到 EC 沙箱环境。如果你在本地机器上，请直接 clone 后用 python 跑 bin/feishu-runner.py："
+  echo "未检测到 EC 沙箱环境。如果你在本地机器上，请直接 clone 后用 node 跑 bin/feishu-runner.mjs："
   echo "  git clone $REPO_URL"
-  echo "  cd feishu-skills-app && python bin/feishu-runner.py list"
+  echo "  cd feishu-skills-app && node bin/feishu-runner.mjs list"
   exit 1
 fi
 
@@ -101,4 +101,4 @@ echo "请开启新会话以加载最新 skill。"
 echo "首次使用时会通过飞书 OAuth 卡片引导你完成授权。"
 echo ""
 echo "可用 pipeline 列表："
-python3 "$REPO_DIR/bin/feishu-runner.py" list 2>/dev/null || echo "（运行 python bin/feishu-runner.py list 查看）"
+node "$REPO_DIR/bin/feishu-runner.mjs" list 2>/dev/null || echo "（运行 node bin/feishu-runner.mjs list 查看）"

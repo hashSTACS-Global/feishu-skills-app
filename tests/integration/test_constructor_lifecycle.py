@@ -18,12 +18,12 @@ import sys
 from pathlib import Path
 
 APP_DIR = Path(__file__).resolve().parent.parent.parent
-RUNNER = APP_DIR / "bin" / "feishu-runner.py"
+RUNNER = APP_DIR / "bin" / "feishu-runner.mjs"
 
 
 def run_pipeline(pipeline: str, *args: str) -> dict:
-    """Invoke runner.py and parse stdout JSON."""
-    cmd = [sys.executable, str(RUNNER), pipeline, *args]
+    """Invoke the Node runner and parse stdout JSON."""
+    cmd = ["node", str(RUNNER), pipeline, *args]
     proc = subprocess.run(
         cmd,
         cwd=str(APP_DIR),

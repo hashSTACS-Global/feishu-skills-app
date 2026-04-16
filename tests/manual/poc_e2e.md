@@ -30,7 +30,7 @@ export FEISHU_APP_SECRET="xxx"
 
 最简单的方式：在飞书电脑端打开任意聊天，浏览器开发者工具看 API 请求。或者在你已有 token 的环境跑 `search-user` pipeline：
 ```bash
-python bin/feishu-runner.py search-user --open-id <已知任一open_id> --query "你的姓名"
+node bin/feishu-runner.mjs search-user --open-id <已知任一open_id> --query "你的姓名"
 ```
 返回结果里就有你的 `open_id`（形如 `ou_xxxxxxxx`）。
 
@@ -51,7 +51,7 @@ python bin/feishu-runner.py search-user --open-id <已知任一open_id> --query 
 
 ```bash
 cd feishu-skills-app
-python bin/feishu-runner.py list
+node bin/feishu-runner.mjs list
 ```
 **预期输出**（约 0.5 秒返回，列出 19 个业务 pipeline）：
 ```json
@@ -59,7 +59,7 @@ python bin/feishu-runner.py list
 ```
 
 ```bash
-python bin/feishu-runner.py im-message --open-id ou_invalid --action send
+node bin/feishu-runner.mjs im-message --open-id ou_invalid --action send
 ```
 **预期输出**（约 1 秒返回）：
 ```json
@@ -77,7 +77,7 @@ python bin/feishu-runner.py im-message --open-id ou_invalid --action send
 
 ```bash
 cd feishu-skills-app
-python bin/feishu-runner.py im-message \
+node bin/feishu-runner.mjs im-message \
   --open-id <YOUR_OPEN_ID> \
   --action send \
   --receive-id <YOUR_OPEN_ID> \

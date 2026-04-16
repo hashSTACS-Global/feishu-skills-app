@@ -40,7 +40,7 @@ except Exception:
     pass
 
 APP_DIR = Path(__file__).resolve().parent.parent.parent
-RUNNER = APP_DIR / "bin" / "feishu-runner.py"
+RUNNER = APP_DIR / "bin" / "feishu-runner.mjs"
 
 # ---------------------------------------------------------------------------
 # Test config
@@ -244,8 +244,8 @@ def color(text: str, c: str) -> str:
 
 
 def run_pipeline(pipeline: str, extra_args: list[str], timeout_s: int = 30) -> dict:
-    """Invoke runner.py and parse stdout JSON."""
-    cmd = [sys.executable, str(RUNNER), pipeline, "--open-id", OPEN_ID, *extra_args]
+    """Invoke the Node runner and parse stdout JSON."""
+    cmd = ["node", str(RUNNER), pipeline, "--open-id", OPEN_ID, *extra_args]
     proc = subprocess.run(
         cmd,
         cwd=str(APP_DIR),

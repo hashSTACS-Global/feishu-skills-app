@@ -27,7 +27,7 @@ This APP moves all execution into deterministic `code` steps. The LLM only handl
                 ┌──────────────────────────────────────┐
                 │  EC bot (LLM) — reads SKILL.md       │
                 │  routes intent → invokes pipeline    │
-                │  via:  python bin/feishu-runner.py   │
+                │  via:  node bin/feishu-runner.mjs    │
                 └──────────────┬───────────────────────┘
                                │
                                ▼
@@ -85,10 +85,10 @@ export FEISHU_APP_ID="cli_xxx"
 export FEISHU_APP_SECRET="xxx"
 
 # List pipelines
-python bin/feishu-runner.py list
+node bin/feishu-runner.mjs list
 
 # Run a pipeline
-python bin/feishu-runner.py im-message \
+node bin/feishu-runner.mjs im-message \
   --open-id ou_xxx \
   --action send \
   --receive-id ou_yyy \
@@ -106,7 +106,7 @@ feishu-skills-app/
 ├── app.json                    # APP metadata (api_version: v0.4)
 ├── feishu-skills.yaml          # Version manifest (used by upgrade flow)
 ├── bin/
-│   ├── feishu-runner.py        # Pipeline Runner (standalone Python)
+│   ├── feishu-runner.mjs       # Pipeline Runner (standalone Node.js)
 │   └── feishu-app-install.sh   # EC/OpenClaw install script
 ├── pipelines/
 │   ├── _constructor/           # Auth + token refresh (auto-runs first)
@@ -139,12 +139,13 @@ This hybrid approach saved ~5000 lines of mechanical translation while folding t
 
 Constructor lifecycle (no credentials needed):
 ```bash
-python -c "
-import json, subprocess, sys
-result = subprocess.run([sys.executable, 'bin/feishu-runner.py', 'list'],
-                       capture_output=True, text=True)
-print(json.loads(result.stdout))
-"
+node bin/feishu-runner.mjs list
+```
+
+Integration tests (requires Python + pytest, dev-time only):
+```bash
+pip install pytest
+python -m pytest tests/integration/test_constructor_lifecycle.py -v
 ```
 
 Manual E2E walkthrough: see [tests/manual/poc_e2e.md](tests/manual/poc_e2e.md).
