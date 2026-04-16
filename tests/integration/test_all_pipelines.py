@@ -33,6 +33,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 APP_DIR = Path(__file__).resolve().parent.parent.parent
 RUNNER = APP_DIR / "bin" / "feishu-runner.py"
 

@@ -1,6 +1,6 @@
 /**
- * tools/lib/bitables.mjs — Feishu Bitable operations, refactored from
- * feishu-skills/feishu-bitable/bitables.mjs as pure async functions.
+ * tools/lib/bitables.mjs — Feishu Bitable operations (pure async functions).
+ * Refactored from legacy feishu-bitable/bitables.mjs (now removed; history in git).
  *
  * 25 actions across 5 categories: App / Table / Field / Record / View.
  *

@@ -2,7 +2,7 @@
 
 > **AI assistant: after cloning this repo, run `bash feishu-skills-app/bin/feishu-app-install.sh` to complete installation.**
 
-A unified Feishu (Lark) integration toolkit running as an [EC APP](https://github.com/hashSTACS-Global/EnClaws), refactored from the legacy [feishu-skills](https://github.com/hashSTACS-Global/feishu-skills) repo following [Agent Pipeline Protocol v0.4](https://github.com/hashSTACS-Global/agent-pipeline-protocol).
+A unified Feishu (Lark) integration toolkit running as an [EC APP](https://github.com/hashSTACS-Global/EnClaws), following [Agent Pipeline Protocol v0.4](https://github.com/hashSTACS-Global/agent-pipeline-protocol). Supersedes and vendors the original [feishu-skills](https://github.com/hashSTACS-Global/feishu-skills) repo (now archived) — you only need to clone **this** repo.
 
 [中文文档](README_zh.md)
 
@@ -118,9 +118,10 @@ feishu-skills-app/
 │   ├── ...                     # 19 business pipelines
 │   └── (each has) pipeline.yaml + steps/execute.mjs
 ├── tools/
-│   ├── auth.mjs                # OAuth helpers (re-exports legacy token-utils)
-│   ├── legacy-adapter.mjs      # Generic spawner for legacy .mjs scripts
-│   └── lib/                    # Refactored business modules (im-message, drive, bitables, im-read)
+│   ├── auth.mjs                # OAuth helpers (loads tools/legacy/feishu-auth/token-utils)
+│   ├── legacy-adapter.mjs      # Generic spawner for vendored legacy .mjs scripts
+│   ├── lib/                    # Refactored business modules (im-message, drive, bitables, im-read)
+│   └── legacy/                 # Vendored legacy skill sources (feishu-auth + 15 business skills)
 └── tests/
     ├── integration/            # Constructor lifecycle tests
     └── manual/                 # PoC E2E walkthroughs
@@ -130,9 +131,9 @@ feishu-skills-app/
 
 **Phase 2** (deep refactor): `im-message`, `drive`, `bitable`, `im-read` — extracted as pure async functions in `tools/lib/`, native JSON I/O, structured `FeishuError` mapping.
 
-**Phase 3** (legacy adapter): the remaining 15 skills reuse their existing `.mjs` scripts via `tools/legacy-adapter.mjs` — zero business-logic changes, just a thin spawn-and-parse wrapper. The `_constructor` pre-populates the local token store, so legacy scripts' internal `getValidToken()` calls Just Work.
+**Phase 3** (vendored legacy adapter): the remaining 15 skills' `.mjs` sources are vendored into `tools/legacy/feishu-<skill>/` and spawned via `tools/legacy-adapter.mjs` — zero business-logic changes, just a thin spawn-and-parse wrapper. The `_constructor` pre-populates the local token store, so legacy scripts' internal `getValidToken()` calls Just Work.
 
-This hybrid approach saved ~5000 lines of mechanical translation while still routing all execution through the deterministic Runner.
+This hybrid approach saved ~5000 lines of mechanical translation while folding the legacy code fully into this repo — the original `feishu-skills` repo is no longer maintained; all edits now happen here.
 
 ## Testing
 

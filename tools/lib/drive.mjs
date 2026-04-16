@@ -1,6 +1,6 @@
 /**
- * tools/lib/drive.mjs — Feishu Drive operations, refactored from
- * feishu-skills/feishu-drive/drive.mjs as pure async functions.
+ * tools/lib/drive.mjs — Feishu Drive operations (pure async functions).
+ * Refactored from legacy feishu-drive/drive.mjs (now removed; history in git).
  *
  * Removed: CLI parsing, sendCard side-effects, process.exit.
  * Added: structured error throws (FeishuError) with code + required_scopes.

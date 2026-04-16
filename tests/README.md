@@ -8,7 +8,8 @@ Tests Pipeline Runner mechanics: pipeline discovery, `_constructor` lifecycle, e
 
 ```bash
 cd feishu-skills-app
-python tests/integration/test_constructor_lifecycle.py
+pip install pytest                                        # one-time
+python -m pytest tests/integration/test_constructor_lifecycle.py -v
 ```
 
 ### 2. Full smoke test (requires Feishu credentials)
@@ -65,6 +66,16 @@ TestCase(
 
 ## Reference: last verified result
 
+### 2026-04-16, minimal env (only FEISHU_APP_ID/SECRET + FEISHU_TEST_OPEN_ID)
+```
+=== Summary ===
+  PASS:     3   (drive list, search-doc, search-user)
+  EXPECTED: 14  (validation errors + scopes user hasn't granted)
+  SKIPPED:  4   (bitable × 2, fetch-doc, create-doc — all need optional fixtures)
+  FAIL:     0
+```
+
+### Earlier run with all optional fixtures set
 ```
 === Summary ===
   PASS:     6   (drive list, bitable list_tables/records, search-doc, create-doc, search-user)

@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 
 APP_DIR = Path(__file__).resolve().parent.parent.parent
-RUNNER = APP_DIR / "runner.py"
+RUNNER = APP_DIR / "bin" / "feishu-runner.py"
 
 
 def run_pipeline(pipeline: str, *args: str) -> dict:

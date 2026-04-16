@@ -1,6 +1,6 @@
 /**
- * tools/legacy-adapter.mjs — Generic adapter to invoke any legacy
- * feishu-skills/<skill>/<script>.mjs as a subprocess.
+ * tools/legacy-adapter.mjs — Generic adapter to invoke any vendored
+ * tools/legacy/<skill>/<script>.mjs as a subprocess.
  *
  * Why this works without re-auth:
  *   _constructor has already cached/refreshed the user's token to the
@@ -8,7 +8,7 @@
  *   scripts call `getValidToken(openId, appId, appSecret)` which reads
  *   the same store, so they pick up the token transparently.
  *
- * Arg mapping:
+ * Arg mapping (input → CLI args):
  *   input.foo_bar       -> --foo-bar <value>
  *   input.flag (true)   -> --flag           (bare flag, no value)
  *   input.obj/array     -> --obj '<json>'   (serialized as JSON string)
@@ -26,14 +26,9 @@ function resolveLegacyDir(skillDirName) {
     const p = path.join(fromEnv, skillDirName);
     if (fs.existsSync(p)) return p;
   }
-  const candidates = [
-    path.resolve(__dirname, '..', '..', 'feishu-skills', skillDirName),
-    path.resolve(__dirname, '..', '..', '..', 'feishu-skills', skillDirName),
-  ];
-  for (const c of candidates) {
-    if (fs.existsSync(c)) return c;
-  }
-  throw new Error(`Cannot locate legacy skill dir: ${skillDirName}`);
+  const vendored = path.resolve(__dirname, 'legacy', skillDirName);
+  if (fs.existsSync(vendored)) return vendored;
+  throw new Error(`Cannot locate vendored skill dir: tools/legacy/${skillDirName}`);
 }
 
 function snakeToKebab(s) {

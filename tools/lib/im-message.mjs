@@ -1,7 +1,7 @@
 /**
- * tools/lib/im-message.mjs — IM message send/reply, refactored from
- * feishu-skills/feishu-im-message/message.mjs as pure async functions
- * (no CLI parsing, no process.exit, no stdout writes).
+ * tools/lib/im-message.mjs — IM message send/reply (pure async functions).
+ * Refactored from legacy feishu-im-message/message.mjs (now removed; history in git).
+ * No CLI parsing, no process.exit, no stdout writes.
  *
  * Each function accepts a structured args object + accessToken, and either:
  *   - returns the success object on completion

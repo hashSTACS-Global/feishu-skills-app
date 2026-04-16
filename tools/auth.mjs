@@ -1,11 +1,9 @@
 /**
  * tools/auth.mjs — Auth helpers for feishu-skills APP.
  *
- * Strategy: re-export token utilities from the legacy feishu-skills repo
- * (battle-tested, no need to fork) and provide a callable wrapper around
- * the existing `auth.js --auth-and-poll` CLI.
- *
- * If the legacy path is not available, set FEISHU_LEGACY_AUTH_DIR env var.
+ * Loads token-utils / send-card from the vendored legacy tree at
+ * tools/legacy/feishu-auth/. FEISHU_LEGACY_AUTH_DIR env var is still
+ * honored as an escape hatch (e.g. testing an out-of-tree auth impl).
  */
 import { spawn } from 'node:child_process';
 import path from 'node:path';
@@ -14,26 +12,16 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-/**
- * Resolve the legacy feishu-auth directory (where token-utils.mjs and auth.js live).
- * Order:
- *   1. FEISHU_LEGACY_AUTH_DIR env var
- *   2. ../feishu-skills/feishu-auth (sibling to feishu-skills-app)
- *   3. ../../feishu-skills/feishu-auth
- */
 function resolveLegacyAuthDir() {
   const fromEnv = process.env.FEISHU_LEGACY_AUTH_DIR;
-  if (fromEnv && fs.existsSync(fromEnv)) return fromEnv;
+  if (fromEnv && fs.existsSync(path.join(fromEnv, 'token-utils.mjs'))) return fromEnv;
 
-  const candidates = [
-    path.resolve(__dirname, '..', '..', 'feishu-skills', 'feishu-auth'),
-    path.resolve(__dirname, '..', '..', '..', 'feishu-skills', 'feishu-auth'),
-  ];
-  for (const c of candidates) {
-    if (fs.existsSync(path.join(c, 'token-utils.mjs'))) return c;
-  }
+  const vendored = path.resolve(__dirname, 'legacy', 'feishu-auth');
+  if (fs.existsSync(path.join(vendored, 'token-utils.mjs'))) return vendored;
+
   throw new Error(
-    `Cannot locate legacy feishu-auth dir. Set FEISHU_LEGACY_AUTH_DIR. Tried: ${candidates.join(', ')}`,
+    `Cannot locate feishu-auth helpers. Expected at ${vendored} (vendored) ` +
+    `or override via FEISHU_LEGACY_AUTH_DIR.`,
   );
 }
 

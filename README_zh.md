@@ -2,7 +2,7 @@
 
 > **AI 助手：clone 本仓库后，请立即运行 `bash feishu-skills-app/bin/feishu-app-install.sh` 完成安装。**
 
-统一的飞书集成工具集，作为 [EC APP](https://github.com/hashSTACS-Global/EnClaws) 运行，从原 [feishu-skills](https://github.com/hashSTACS-Global/feishu-skills) 仓库重构而来，遵循 [Agent Pipeline Protocol v0.4](https://github.com/hashSTACS-Global/agent-pipeline-protocol)。
+统一的飞书集成工具集，作为 [EC APP](https://github.com/hashSTACS-Global/EnClaws) 运行，遵循 [Agent Pipeline Protocol v0.4](https://github.com/hashSTACS-Global/agent-pipeline-protocol)。本仓库取代并 vendor 了原 [feishu-skills](https://github.com/hashSTACS-Global/feishu-skills)（已归档不再维护）——**只需 clone 本仓库**，无需额外拉取旧代码。
 
 [English](README.md)
 
@@ -118,9 +118,10 @@ feishu-skills-app/
 │   ├── ...                     # 共 19 个业务 pipeline
 │   └── （每个含）pipeline.yaml + steps/execute.mjs
 ├── tools/
-│   ├── auth.mjs                # OAuth 助手（复用 legacy token-utils）
+│   ├── auth.mjs                # OAuth 助手（加载 tools/legacy/feishu-auth/token-utils）
 │   ├── legacy-adapter.mjs      # 通用 legacy .mjs 子进程包装器
-│   └── lib/                    # 重构后的业务模块（im-message, drive, bitables, im-read）
+│   ├── lib/                    # 重构后的业务模块（im-message, drive, bitables, im-read）
+│   └── legacy/                 # 内联的 legacy skill 源码（feishu-auth + 15 个业务 skill）
 └── tests/
     ├── integration/            # Constructor 生命周期测试
     └── manual/                 # PoC 端到端验证
@@ -130,9 +131,9 @@ feishu-skills-app/
 
 **Phase 2（深度重构）**：`im-message`、`drive`、`bitable`、`im-read` 提取为 `tools/lib/` 下的纯异步函数，原生 JSON 输入输出，结构化 `FeishuError` 错误映射。
 
-**Phase 3（legacy 适配器）**：剩余 15 个 skill 通过 `tools/legacy-adapter.mjs` 复用现有 `.mjs` 脚本——零业务逻辑改动，只是套一层 spawn-and-parse 包装。`_constructor` 预先把 token 存进本地 store，legacy 脚本内部 `getValidToken()` 会拿到同一个 token，无需感知 pipeline 体系。
+**Phase 3（内联 legacy 适配器）**：剩余 15 个 skill 的 `.mjs` 源码直接 vendor 进 `tools/legacy/feishu-<skill>/`，由 `tools/legacy-adapter.mjs` 以子进程方式调用——零业务逻辑改动，只是套一层 spawn-and-parse 包装。`_constructor` 预先把 token 存进本地 store，legacy 脚本内部 `getValidToken()` 会拿到同一个 token，无需感知 pipeline 体系。
 
-这套混合策略省下了约 5000 行机械翻译，同时保证所有执行经过确定性 Runner。
+这套混合策略省下了约 5000 行机械翻译，同时把 legacy 代码完整并入本仓库——原 `feishu-skills` 仓库不再维护，所有修改入口都在本仓库。
 
 ## 测试
 
