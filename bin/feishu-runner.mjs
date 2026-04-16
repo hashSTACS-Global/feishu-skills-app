@@ -464,10 +464,46 @@ function listPipelines() {
 }
 
 function parseKvArgs(argv) {
-  const result = {};
+  let result = {};
+
+  // Pass 1: --input-base64 <b64>
+  //   The base64-decoded string must be a JSON object; its fields become
+  //   the initial params. Use this when calling shells (PowerShell, cmd)
+  //   mangle quotes inside complex JSON values.
+  const b64Idx = argv.indexOf('--input-base64');
+  if (b64Idx !== -1) {
+    if (b64Idx + 1 >= argv.length) {
+      throw new Error('--input-base64 requires a value');
+    }
+    const b64 = argv[b64Idx + 1];
+    let decoded;
+    try {
+      decoded = Buffer.from(b64, 'base64').toString('utf-8');
+    } catch (e) {
+      throw new Error(`--input-base64 decode failed: ${e.message}`);
+    }
+    let obj;
+    try {
+      obj = JSON.parse(decoded);
+    } catch (e) {
+      throw new Error(
+        `--input-base64 is not valid JSON after decode: ${e.message}; got: ${decoded.slice(0, 120)}...`,
+      );
+    }
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
+      throw new Error('--input-base64 must decode to a JSON object, not array/primitive');
+    }
+    result = { ...obj };
+  }
+
+  // Pass 2: regular --key value (override base64 fields if both present)
   let i = 0;
   while (i < argv.length) {
     const token = argv[i];
+    if (token === '--input-base64') {
+      i += 2;
+      continue;
+    }
     if (token.startsWith('--')) {
       const key = token.slice(2).replace(/-/g, '_');
       if (i + 1 < argv.length && !argv[i + 1].startsWith('--')) {

@@ -17,14 +17,48 @@ metadata:
 
 ## 调用 Pipeline 的方式
 
+### 方式 A（推荐）—— `--input-base64`：避开 shell 引号地狱
+
+把所有参数打包成 JSON object，base64 编码后一次性传入：
+
+```bash
+# 伪代码：
+# 1) 把参数组成一个 object：{open_id, action, receive_id, msg_type, content, ...}
+# 2) JSON.stringify
+# 3) base64 encode（Node: Buffer.from(str).toString("base64")）
+# 4) 作为 --input-base64 的值
+node $REPO_DIR/bin/feishu-runner.mjs <pipeline-name> --input-base64 <BASE64_STRING>
+```
+
+**为什么推荐**：PowerShell / cmd 对命令行里嵌套双引号处理不一致（PowerShell ≤7.2 会 strip 内部双引号），导致 `--content '{"text":"..."}'` 传进去变成 `{text:...}`，飞书 API 报 `content is not a string in json format`。Base64 字符串只含 `[A-Za-z0-9+/=]`，任何 shell 都原样传递。
+
+`content` 类字段在 JSON object 里保持 **字符串形式**（飞书 API 要求）：
+```json
+{
+  "open_id": "ou_xxx",
+  "action": "send",
+  "receive_id_type": "open_id",
+  "receive_id": "ou_yyy",
+  "msg_type": "text",
+  "content": "{\"text\":\"你好\"}"
+}
+```
+
+### 方式 B —— 传统 `--key value`（仅在 bash/Linux shell 下可靠）
+
 ```bash
 node $REPO_DIR/bin/feishu-runner.mjs <pipeline-name> --open-id <ou_xxx> --action <action> [--key value ...]
 ```
 
+- 复杂参数（嵌套对象/数组）传 JSON 字符串：`--fields '{"name":"x"}'` 或 `--records '[{...}]'`
+- **在 Windows PowerShell/cmd 下含 JSON 字符串的参数会被 shell mangle，必须改用方式 A**
+
+### 通用规则
+
 - `$REPO_DIR` 通常是 `~/.enclaws/tenants/<tenant_id>/feishu-skills-app/`
-- 复杂参数（嵌套对象/数组）直接传 JSON 字符串：`--fields '{"name":"x"}'` 或 `--records '[{...}]'`
-- 所有 pipeline 都需要 `--open-id`，授权由 `_constructor` 自动处理（首次调用时会发飞书卡片让用户点击授权）
+- 所有 pipeline 都需要 `open_id`，授权由 `_constructor` 自动处理（首次调用会发飞书卡片让用户点击授权）
 - 输出永远是单行 JSON：`{"status":"completed","output":{...}}` 或 `{"status":"error","message":"..."}`
+- 方式 A 和方式 B 可以混用，`--key value` 会覆盖 base64 里的同名字段
 
 ## 可用 Pipeline
 
