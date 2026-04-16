@@ -8,3 +8,7 @@ __pycache__/
 .vscode/
 .claude/
 .pytest_cache/
+
+# Auth state (OAuth device codes, encrypted tokens) — must never be committed
+.tokens/
+tools/legacy/**/.tokens/
