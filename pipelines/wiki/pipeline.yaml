@@ -1,0 +1,15 @@
+name: wiki
+description: "飞书知识库（Wiki）节点管理。auth 由 _constructor 自动处理。"
+triggers:
+  - "知识库"
+  - "wiki"
+  - "查找 wiki"
+input:
+  open_id: string
+  action: string
+  scope: string
+steps:
+  - name: execute
+    type: code
+    command: "node steps/execute.mjs"
+output: execute

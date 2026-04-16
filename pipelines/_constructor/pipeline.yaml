@@ -1,0 +1,10 @@
+name: _constructor
+description: "框架级 auth 检查：拿到有效的 user_access_token；缺失则阻塞触发 OAuth 授权"
+input:
+  open_id: string
+  chat_id: string
+steps:
+  - name: ensure_auth
+    type: code
+    command: "node steps/ensure_auth.mjs"
+output: ensure_auth

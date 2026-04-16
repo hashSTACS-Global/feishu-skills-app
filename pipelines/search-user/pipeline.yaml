@@ -1,0 +1,15 @@
+name: search-user
+description: "搜索飞书用户（仅需 tenant token）。auth 由 _constructor 自动处理。"
+triggers:
+  - "搜索用户"
+  - "search user"
+  - "查用户"
+input:
+  open_id: string
+  action: string
+  scope: string
+steps:
+  - name: execute
+    type: code
+    command: "node steps/execute.mjs"
+output: execute

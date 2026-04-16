@@ -1,0 +1,32 @@
+name: drive
+description: "飞书云盘文件管理：列目录/创建/批量元信息/复制/移动/上传/下载/删除。auth 由 _constructor 自动处理。"
+triggers:
+  - "列出云盘文件"
+  - "上传文件到云盘"
+  - "下载云盘文件"
+  - "复制云盘文件"
+  - "移动云盘文件"
+  - "删除云盘文件"
+  - "创建云盘文件夹"
+  - "查看云盘文件元信息"
+  - "list drive folder"
+  - "upload file to drive"
+input:
+  open_id: string
+  action: string
+  folder_token: string
+  file_token: string
+  name: string
+  type: string
+  request_docs: object
+  file_path: string
+  file_base64: string
+  file_name: string
+  output_path: string
+  confirm_delete: boolean
+  scope: string
+steps:
+  - name: execute
+    type: code
+    command: "node steps/execute.mjs"
+output: execute

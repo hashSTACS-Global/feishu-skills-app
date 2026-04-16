@@ -1,0 +1,33 @@
+name: im-read
+description: "读取飞书 IM 消息：get_messages（会话历史，tenant token）/ search_messages（跨会话搜索，user token）"
+triggers:
+  - "读消息"
+  - "查看消息"
+  - "搜索消息"
+  - "消息历史"
+  - "read messages"
+  - "search feishu messages"
+input:
+  open_id: string
+  action: string
+  chat_id: string
+  target_open_id: string
+  query: string
+  page_size: integer
+  page_token: string
+  sort_rule: string
+  start_time: string
+  end_time: string
+  relative_time: string
+  thread_id: string
+  sender_ids: array
+  mention_ids: array
+  message_type: string
+  sender_type: string
+  chat_type: string
+  scope: string
+steps:
+  - name: execute
+    type: code
+    command: "node steps/execute.mjs"
+output: execute

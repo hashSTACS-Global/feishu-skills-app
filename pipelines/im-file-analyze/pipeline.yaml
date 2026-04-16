@@ -1,0 +1,15 @@
+name: im-file-analyze
+description: "下载并解析飞书 IM 附件（PDF/DOCX/PPTX/XLSX/zip 等）。auth 由 _constructor 自动处理。"
+triggers:
+  - "解析附件"
+  - "分析文件"
+  - "analyze file"
+input:
+  open_id: string
+  action: string
+  scope: string
+steps:
+  - name: execute
+    type: code
+    command: "node steps/execute.mjs"
+output: execute

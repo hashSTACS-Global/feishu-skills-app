@@ -1,0 +1,7 @@
+{
+  "id": "feishu-skills",
+  "name": "Feishu Skills",
+  "version": "0.1.0",
+  "api_version": "v0.4",
+  "description": "飞书集成技能集（IM、文档、云盘、日历、任务、Bitable 等）—— 基于 Agent Pipeline Protocol v0.4 重构"
+}

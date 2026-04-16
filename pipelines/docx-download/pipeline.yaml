@@ -1,0 +1,15 @@
+name: docx-download
+description: "导出飞书文档为本地文件（docx/pdf）。auth 由 _constructor 自动处理。"
+triggers:
+  - "下载文档"
+  - "导出文档"
+  - "download doc"
+input:
+  open_id: string
+  action: string
+  scope: string
+steps:
+  - name: execute
+    type: code
+    command: "node steps/execute.mjs"
+output: execute

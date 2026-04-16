@@ -1,0 +1,6 @@
+# Feishu Skills APP 项目信息（git 跟踪，升级时更新）
+
+version: 0.1.0
+
+# --- 升级 ---
+upgrade_repo: https://github.com/hashSTACS-Global/feishu-skills-app.git

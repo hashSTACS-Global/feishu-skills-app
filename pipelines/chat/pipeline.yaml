@@ -1,0 +1,16 @@
+name: chat
+description: "飞书群组管理（创建/查询/成员管理）。auth 由 _constructor 自动处理。"
+triggers:
+  - "群组"
+  - "chat"
+  - "创建群"
+  - "查群"
+input:
+  open_id: string
+  action: string
+  scope: string
+steps:
+  - name: execute
+    type: code
+    command: "node steps/execute.mjs"
+output: execute

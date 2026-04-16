@@ -1,0 +1,15 @@
+name: update-doc
+description: "更新飞书云文档内容。auth 由 _constructor 自动处理。"
+triggers:
+  - "更新文档"
+  - "修改文档"
+  - "update doc"
+input:
+  open_id: string
+  action: string
+  scope: string
+steps:
+  - name: execute
+    type: code
+    command: "node steps/execute.mjs"
+output: execute

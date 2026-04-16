@@ -1,0 +1,15 @@
+name: doc-media
+description: "飞书文档图片/附件管理。auth 由 _constructor 自动处理。"
+triggers:
+  - "文档图片"
+  - "文档附件"
+  - "doc media"
+input:
+  open_id: string
+  action: string
+  scope: string
+steps:
+  - name: execute
+    type: code
+    command: "node steps/execute.mjs"
+output: execute

@@ -1,0 +1,14 @@
+name: doc-comment
+description: "飞书文档评论：增删改查。auth 由 _constructor 自动处理。"
+triggers:
+  - "文档评论"
+  - "comment"
+input:
+  open_id: string
+  action: string
+  scope: string
+steps:
+  - name: execute
+    type: code
+    command: "node steps/execute.mjs"
+output: execute

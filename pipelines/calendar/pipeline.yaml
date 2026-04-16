@@ -1,0 +1,17 @@
+name: calendar
+description: "飞书日历日程管理（创建/查询/更新事件、freebusy 等）。auth 由 _constructor 自动处理。"
+triggers:
+  - "日历"
+  - "日程"
+  - "calendar"
+  - "创建会议"
+  - "查日程"
+input:
+  open_id: string
+  action: string
+  scope: string
+steps:
+  - name: execute
+    type: code
+    command: "node steps/execute.mjs"
+output: execute

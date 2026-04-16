@@ -1,0 +1,15 @@
+name: search-doc
+description: "搜索飞书文档（按标题/全文）。auth 由 _constructor 自动处理。"
+triggers:
+  - "搜索文档"
+  - "查找文档"
+  - "search doc"
+input:
+  open_id: string
+  action: string
+  scope: string
+steps:
+  - name: execute
+    type: code
+    command: "node steps/execute.mjs"
+output: execute

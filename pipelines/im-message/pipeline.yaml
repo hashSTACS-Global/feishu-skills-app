@@ -1,0 +1,24 @@
+name: im-message
+description: "以用户身份发送或回复飞书 IM 消息（私聊/群聊/富文本/图片）。auth 由 _constructor 自动处理。"
+triggers:
+  - "发消息"
+  - "发送飞书消息"
+  - "回复消息"
+  - "send feishu message"
+  - "reply to message"
+input:
+  open_id: string
+  action: string
+  receive_id: string
+  receive_id_type: string
+  message_id: string
+  msg_type: string
+  content: object
+  image_path: string
+  reply_in_thread: boolean
+  uuid: string
+steps:
+  - name: execute
+    type: code
+    command: "node steps/execute.mjs"
+output: execute
