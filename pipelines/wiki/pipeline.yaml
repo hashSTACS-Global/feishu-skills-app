@@ -1,5 +1,6 @@
 name: wiki
 description: "飞书知识库（Wiki）节点管理。auth 由 _constructor 自动处理。"
+required_scope: "wiki:wiki wiki:wiki:readonly"
 triggers:
   - "知识库"
   - "wiki"

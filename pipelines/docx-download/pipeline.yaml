@@ -1,5 +1,6 @@
 name: docx-download
 description: "导出飞书文档为本地文件（docx/pdf）。auth 由 _constructor 自动处理。"
+required_scope: "docx:document:readonly drive:drive"
 triggers:
   - "下载文档"
   - "导出文档"

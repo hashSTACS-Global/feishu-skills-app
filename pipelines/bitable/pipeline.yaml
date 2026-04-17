@@ -1,5 +1,6 @@
 name: bitable
 description: "飞书多维表格管理：应用/数据表/字段/记录/视图（25 个 action）。auth 由 _constructor 自动处理。"
+required_scope: "bitable:app drive:drive"
 triggers:
   - "多维表格"
   - "bitable"

@@ -1,5 +1,6 @@
 name: create-doc
 description: "创建飞书云文档（docx），支持 Markdown 转换。auth 由 _constructor 自动处理。"
+required_scope: "docx:document docx:document:create docs:doc drive:drive"
 triggers:
   - "创建文档"
   - "新建文档"

@@ -1,5 +1,6 @@
 name: chat
 description: "飞书群组管理（创建/查询/成员管理）。auth 由 _constructor 自动处理。"
+required_scope: "im:chat:readonly im:chat.members:read"
 triggers:
   - "群组"
   - "chat"

@@ -1,5 +1,6 @@
 name: doc-media
 description: "飞书文档图片/附件管理。auth 由 _constructor 自动处理。"
+required_scope: "drive:drive docx:document"
 triggers:
   - "文档图片"
   - "文档附件"

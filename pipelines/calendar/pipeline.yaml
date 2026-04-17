@@ -1,5 +1,6 @@
 name: calendar
 description: "飞书日历日程管理（创建/查询/更新事件、freebusy 等）。auth 由 _constructor 自动处理。"
+required_scope: "calendar:calendar calendar:calendar:read calendar:calendar.event:create calendar:calendar.event:read calendar:calendar.event:update calendar:calendar.event:delete calendar:calendar.free_busy:read"
 triggers:
   - "日历"
   - "日程"

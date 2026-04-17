@@ -1,5 +1,6 @@
 name: im-message
 description: "以用户身份发送或回复飞书 IM 消息（私聊/群聊/富文本/图片）。auth 由 _constructor 自动处理。"
+required_scope: "im:message im:message:send_as_user"
 triggers:
   - "发消息"
   - "发送飞书消息"

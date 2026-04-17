@@ -1,5 +1,6 @@
 name: drive
 description: "飞书云盘文件管理：列目录/创建/批量元信息/复制/移动/上传/下载/删除。auth 由 _constructor 自动处理。"
+required_scope: "drive:drive drive:drive:readonly"
 triggers:
   - "列出云盘文件"
   - "上传文件到云盘"

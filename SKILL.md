@@ -118,9 +118,20 @@ Pipeline 返回 `{"status":"error", ...}` 时：
 | `missing_param` | 缺必填参数 | 向用户追问对应字段 |
 | `invalid_param` | 参数格式错 | 检查格式后重试 |
 | `auth_required` / `auth_failed` | OAuth 失败 | 让用户重新点击授权卡片 |
-| `permission_required` | 应用 scope 不足 | 把返回的 `required_scopes` 给用户看 |
+| `permission_required` | 用户 OAuth scope 不足 | **Runner 会自动带 scope 重试并发送授权卡片**（见下方说明）。如果自动重试仍失败，告诉用户"请点击飞书中的授权卡片完成授权" |
 | `confirmation_required` | 高危操作待确认（如 delete）| 向用户确认后加 `--confirm-delete` 重试 |
 | `api_error` | 飞书 API 业务错误 | 把 message 原样告诉用户，不要无脑重试 |
+
+### Scope 自动处理机制
+
+每个 pipeline.yaml 声明了 `required_scope`（该 pipeline 所需的最小 OAuth 权限集）。Runner 在执行前会自动将 `required_scope` 传给 `_constructor`，constructor 会：
+1. 检查缓存 token 是否已覆盖所需 scope
+2. 如果不足，自动发送授权卡片给用户（包含新增 scope）
+3. 用户点击授权后，pipeline 正常继续
+
+如果首次执行仍遇到 `permission_required`（例如 scope 列表遗漏），Runner 会提取返回的 `required_scopes` 自动重跑 constructor + 业务 pipeline（至多重试一次）。
+
+**你不需要手动处理 scope**——直接调用 pipeline 即可，scope 升级全自动。用户唯一需要做的是点击飞书中弹出的授权卡片。
 
 ## 不确定时
 

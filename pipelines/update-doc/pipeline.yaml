@@ -1,5 +1,6 @@
 name: update-doc
 description: "更新飞书云文档内容。auth 由 _constructor 自动处理。"
+required_scope: "docx:document docx:document:write_only docs:doc drive:drive"
 triggers:
   - "更新文档"
   - "修改文档"

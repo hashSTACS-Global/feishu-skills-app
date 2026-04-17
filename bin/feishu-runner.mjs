@@ -185,10 +185,11 @@ function renderTemplate(template, params, context) {
 // Step execution
 // ---------------------------------------------------------------------------
 class StepError extends Error {
-  constructor(message, stepName = '') {
+  constructor(message, stepName = '', stdoutJson = null) {
     super(message);
     this.name = 'StepError';
     this.stepName = stepName;
+    this.stdoutJson = stdoutJson;
   }
 }
 
@@ -250,8 +251,10 @@ function runCodeStep(step, pipelineDir, params, context) {
     child.on('close', (code) => {
       if (code !== 0) {
         const body = (stdout.trim() || stderr.trim()).slice(0, 500);
+        let parsed = null;
+        try { parsed = JSON.parse(stdout); } catch {}
         return rejectPromise(
-          new StepError(`code step '${step.name}' exited ${code}: ${body}`, step.name),
+          new StepError(`code step '${step.name}' exited ${code}: ${body}`, step.name, parsed),
         );
       }
       if (!stdout.trim()) {
@@ -345,6 +348,9 @@ async function executePipeline(pipelineName, params, seedContext = null, session
         };
       }
       if (err instanceof StepError) {
+        if (err.stdoutJson && err.stepName) {
+          context[err.stepName] = { output: err.stdoutJson };
+        }
         return { status: 'error', message: err.message, step_outputs: context };
       }
       throw err;
@@ -367,6 +373,17 @@ async function executeWithLifecycle(pipelineName, params) {
   const destructorDir = join(PIPELINES_DIR, DESTRUCTOR_NAME);
   const seedContext = {};
 
+  // Read business pipeline definition to check for required_scope.
+  // If declared and caller didn't provide scope, inject it so the
+  // constructor can proactively verify / upgrade OAuth scopes.
+  const bizYamlPath = join(PIPELINES_DIR, pipelineName, 'pipeline.yaml');
+  if (existsSync(bizYamlPath)) {
+    const bizDef = loadYaml(bizYamlPath);
+    if (bizDef.required_scope && !params.scope) {
+      params.scope = bizDef.required_scope;
+    }
+  }
+
   if (existsSync(join(constructorDir, 'pipeline.yaml'))) {
     const ctorResult = await executePipeline(CONSTRUCTOR_NAME, params);
     if (ctorResult.status === 'error') {
@@ -380,7 +397,37 @@ async function executeWithLifecycle(pipelineName, params) {
     seedContext[CONSTRUCTOR_NAME] = { output: ctorResult.output || {} };
   }
 
-  const businessResult = await executePipeline(pipelineName, params, seedContext);
+  let businessResult = await executePipeline(pipelineName, params, seedContext);
+
+  // Auto-retry on permission_required: re-run constructor with the missing
+  // scopes, then retry the business pipeline once.
+  if (businessResult.status === 'error') {
+    const stepOutputs = businessResult.step_outputs || {};
+    // Find the step whose output contains a permission_required error.
+    const failedOut = Object.values(stepOutputs)
+      .map(s => s?.output || {})
+      .find(o => o.error === 'permission_required' && o.required_scopes);
+    if (failedOut) {
+      const scopes = Array.isArray(failedOut.required_scopes)
+        ? failedOut.required_scopes.join(' ')
+        : String(failedOut.required_scopes);
+      process.stderr.write(`[runner] permission_required → re-auth with scope: ${scopes}\n`);
+      params.scope = scopes;
+      if (existsSync(join(constructorDir, 'pipeline.yaml'))) {
+        const retryCtorResult = await executePipeline(CONSTRUCTOR_NAME, params);
+        if (retryCtorResult.status === 'error') {
+          return {
+            status: 'error',
+            message: `constructor (scope retry) failed: ${retryCtorResult.message}`,
+            phase: 'constructor',
+          };
+        }
+        if (retryCtorResult.status === 'paused') return retryCtorResult;
+        seedContext[CONSTRUCTOR_NAME] = { output: retryCtorResult.output || {} };
+      }
+      businessResult = await executePipeline(pipelineName, params, seedContext);
+    }
+  }
 
   if (existsSync(join(destructorDir, 'pipeline.yaml'))) {
     let destructorResult;

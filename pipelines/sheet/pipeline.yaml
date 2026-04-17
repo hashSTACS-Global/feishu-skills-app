@@ -1,5 +1,6 @@
 name: sheet
 description: "飞书电子表格操作（读写单元格、范围、公式）。auth 由 _constructor 自动处理。"
+required_scope: "sheets:spreadsheet drive:drive"
 triggers:
   - "电子表格"
   - "sheet"

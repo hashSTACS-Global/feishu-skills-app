@@ -1,5 +1,6 @@
 name: search-doc
 description: "搜索飞书文档（按标题/全文）。auth 由 _constructor 自动处理。"
+required_scope: "drive:drive drive:drive:readonly search:docs:read"
 triggers:
   - "搜索文档"
   - "查找文档"

@@ -1,5 +1,6 @@
 name: fetch-doc
 description: "读取飞书云文档（docx）内容。auth 由 _constructor 自动处理。"
+required_scope: "docx:document:readonly docs:doc drive:drive docs:document.media:download"
 triggers:
   - "读文档"
   - "获取文档内容"
