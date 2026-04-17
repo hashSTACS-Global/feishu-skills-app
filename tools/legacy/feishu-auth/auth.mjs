@@ -207,14 +207,14 @@ async function tryExchange(deviceCode, cfg) {
   }
 }
 
-function saveAuthorizedToken(openId, cfg, data) {
+function saveAuthorizedToken(openId, cfg, data, requestedScope) {
   const now = Date.now();
   const tokenData = {
     accessToken:      data.access_token,
     refreshToken:     data.refresh_token,
     expiresAt:        now + (data.expires_in ?? 7200) * 1000,
     refreshExpiresAt: now + (data.refresh_token_expires_in ?? data.refresh_expires_in ?? 604800) * 1000,
-    scope:            data.scope,
+    scope:            data.scope || requestedScope || '',
     grantedAt:        now,
   };
   saveToken(openId, cfg.appId, tokenData);
@@ -230,9 +230,9 @@ function saveAuthorizedToken(openId, cfg, data) {
  * Continues polling across multiple rounds until authorized or device_code expires.
  * Never returns polling_timeout to the caller (agent).
  */
-async function pollLoop(openId, cfg, pending, roundMs, messageId) {
+async function pollLoop(openId, cfg, pending, roundMs, messageId, requestedScope) {
   while (true) {
-    const result = await pollUntilAuthorized(openId, cfg, pending, roundMs, messageId);
+    const result = await pollUntilAuthorized(openId, cfg, pending, roundMs, messageId, requestedScope);
     if (result.status !== 'polling_timeout') return result;
     // device_code still valid — re-read pending only to check expiry
     const currentPending = readPending(openId);
@@ -247,7 +247,7 @@ async function pollLoop(openId, cfg, pending, roundMs, messageId) {
   }
 }
 
-async function pollUntilAuthorized(openId, cfg, pending, timeoutMs, messageId) {
+async function pollUntilAuthorized(openId, cfg, pending, timeoutMs, messageId, requestedScope) {
   const deviceDeadline = pending.created_at + pending.expires_in * 1000;
   const pollDeadline = timeoutMs ? Date.now() + timeoutMs : deviceDeadline;
   const deadline = Math.min(deviceDeadline, pollDeadline);
@@ -259,7 +259,7 @@ async function pollUntilAuthorized(openId, cfg, pending, timeoutMs, messageId) {
     process.stderr.write(`[poll] exchange response: ${JSON.stringify(json).slice(0, 500)}\n`);
 
     if (!error && json.access_token) {
-      const tokenData = saveAuthorizedToken(openId, cfg, json);
+      const tokenData = saveAuthorizedToken(openId, cfg, json, requestedScope);
       await tryUpdateCardToGreen(openId);
       deletePending(openId);
       return {
@@ -353,7 +353,7 @@ async function authAndPoll(openId, chatId, cfg, timeoutMs, extraScopesStr) {
     process.stderr.write('[auth-and-poll] found existing pending auth, trying exchange first...\n');
     const json = await tryExchange(existingPending.device_code, cfg);
     if (!json.error && json.access_token) {
-      saveAuthorizedToken(openId, cfg, json);
+      saveAuthorizedToken(openId, cfg, json, mergedScope);
       await tryUpdateCardToGreen(openId);
       deletePending(openId);
       out({ status: 'authorized', message: '授权成功！' });
@@ -377,7 +377,7 @@ async function authAndPoll(openId, chatId, cfg, timeoutMs, extraScopesStr) {
           process.stderr.write(`[auth-and-poll] auth card sent for existing pending, message_id=${cardResult.message_id}\n`);
         }
       }
-      const result = await pollLoop(openId, cfg, existingPending, timeoutMs, existingPending.message_id);
+      const result = await pollLoop(openId, cfg, existingPending, timeoutMs, existingPending.message_id, mergedScope);
       out(result);
       if (result.status !== 'authorized') process.exit(1);
       return;
@@ -413,7 +413,7 @@ async function authAndPoll(openId, chatId, cfg, timeoutMs, extraScopesStr) {
   }
 
   // Internal poll loop — never returns polling_timeout to agent
-  const result = await pollLoop(openId, cfg, pending, timeoutMs, cardResult.message_id);
+  const result = await pollLoop(openId, cfg, pending, timeoutMs, cardResult.message_id, mergedScope);
   out(result);
   if (result.status !== 'authorized') process.exit(1);
 }
