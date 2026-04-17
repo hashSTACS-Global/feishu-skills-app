@@ -403,10 +403,11 @@ async function executeWithLifecycle(pipelineName, params) {
   // scopes, then retry the business pipeline once.
   if (businessResult.status === 'error') {
     const stepOutputs = businessResult.step_outputs || {};
-    // Find the step whose output contains a permission_required error.
+    // Find the step whose output contains a permission_required error
+    // that can be solved by user OAuth re-auth (skip tenant-level errors).
     const failedOut = Object.values(stepOutputs)
       .map(s => s?.output || {})
-      .find(o => o.error === 'permission_required' && o.required_scopes);
+      .find(o => o.error === 'permission_required' && o.required_scopes && o.auth_type !== 'tenant');
     if (failedOut) {
       const scopes = Array.isArray(failedOut.required_scopes)
         ? failedOut.required_scopes.join(' ')
