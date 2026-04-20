@@ -1,121 +1,124 @@
 /**
- * tools/lib/drive.mjs — Feishu Drive operations (pure async functions).
- * Refactored from legacy feishu-drive/drive.mjs (now removed; history in git).
+ * tools/lib/drive.mjs — Feishu Drive operations (thin API adapter).
  *
- * Removed: CLI parsing, sendCard side-effects, process.exit.
- * Added: structured error throws (FeishuError) with code + required_scopes.
- * Kept: business logic (API calls, multipart upload, etc.) verbatim.
+ * 8 actions: list / create_folder / get_meta / copy / move / delete / upload / download.
+ *
+ * Contract:
+ *   - Pure pass-through. No auto-pagination. No URL inference.
+ *   - Missing / wrong-shape params → throws missing_param / invalid_param.
+ *   - Paginated endpoints (list) return one page + has_more + page_token;
+ *     caller iterates explicitly.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 
-class FeishuError extends Error {
-  constructor(code, message, extra = {}) {
-    super(message);
-    this.code = code;
-    Object.assign(this, extra);
-  }
-}
+import { FeishuError, apiCall, checkApi, requireParam } from './_common.mjs';
+
+const DOMAIN = { domain: 'drive' };
 
 const DOC_TYPES = new Set([
   'doc', 'sheet', 'file', 'bitable', 'docx', 'folder', 'mindnote', 'slides',
 ]);
 
 const DOC_TYPE_URL_PREFIX = {
-  folder: 'drive/folder', docx: 'docx', doc: 'docs',
-  sheet: 'sheets', bitable: 'base', mindnote: 'mindnotes',
-  slides: 'slides', file: 'file',
+  folder: 'drive/folder',
+  docx: 'docx',
+  doc: 'docs',
+  sheet: 'sheets',
+  bitable: 'base',
+  mindnote: 'mindnotes',
+  slides: 'slides',
+  file: 'file',
 };
 
 const UPLOAD_ALL_LIMIT = 15 * 1024 * 1024;
+const LIST_PAGE_SIZE_MAX = 200; // Feishu API upper bound
 
+/**
+ * Construct a Feishu front-end URL from a doc token + type.
+ * Returns '' if token is empty. Throws invalid_param for unknown types.
+ */
 export function buildFeishuUrl(token, type) {
   if (!token) return '';
   const prefix = DOC_TYPE_URL_PREFIX[type];
-  if (!prefix) return '';
+  if (!prefix) {
+    throw new FeishuError(
+      'invalid_param',
+      `buildFeishuUrl: 未知 type=${type}。支持：${Object.keys(DOC_TYPE_URL_PREFIX).join(', ')}`,
+      { param: 'type', got: type },
+    );
+  }
   return `https://www.feishu.cn/${prefix}/${token}`;
 }
 
-// ---------------------------------------------------------------------------
-// HTTP helpers
-// ---------------------------------------------------------------------------
-
-async function apiCall(method, urlPath, token, { body, query } = {}) {
-  let url = `https://open.feishu.cn/open-apis${urlPath}`;
-  if (query && Object.keys(query).length > 0) {
-    const qs = new URLSearchParams(query).toString();
-    url += (url.includes('?') ? '&' : '?') + qs;
+function requireDocType(args) {
+  requireParam(args, 'type', `文档类型，支持 ${[...DOC_TYPES].join(' / ')}`);
+  if (!DOC_TYPES.has(args.type)) {
+    throw new FeishuError(
+      'invalid_param',
+      `type 不支持：${args.type}。支持：${[...DOC_TYPES].join(', ')}`,
+      { param: 'type', got: args.type },
+    );
   }
-  const res = await fetch(url, {
-    method,
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  let data;
-  try { data = await res.json(); } catch (e) {
-    throw new FeishuError('api_error', `Feishu API parse error: ${res.status} ${res.statusText}`);
-  }
-  return data;
 }
 
-async function apiCallRaw(method, urlPath, token, { body, query, headers } = {}) {
-  let url = `https://open.feishu.cn/open-apis${urlPath}`;
-  if (query && Object.keys(query).length > 0) {
-    const qs = new URLSearchParams(query).toString();
-    url += (url.includes('?') ? '&' : '?') + qs;
+// IM file_key (starts with "file_") is NOT a drive file_token — common LLM mistake.
+function rejectImFileKey(token, paramName = 'file_token') {
+  if (typeof token === 'string' && /^file_/.test(token)) {
+    throw new FeishuError(
+      'invalid_im_file_key',
+      `${paramName} 看起来是 IM 消息 file_key（"file_" 开头），不是云盘 ${paramName}。`,
+      {
+        param: paramName,
+        hint: '若想操作 IM 里的附件，请先下载到本地或上传到云盘获得真正的 file_token',
+      },
+    );
   }
-  return fetch(url, {
-    method,
-    headers: { Authorization: `Bearer ${token}`, ...(headers || {}) },
-    body,
-  });
-}
-
-function checkApiResult(data, opName) {
-  if (data.code === 0) return data;
-  const msg = `${opName} failed: code=${data.code} msg=${data.msg}`;
-  if (data.code === 99991663) throw new FeishuError('auth_required', '飞书 token 已失效，请重新授权');
-  if (data.code === 99991400) throw new FeishuError('rate_limited', msg);
-  if (data.code === 99991672 || data.code === 99991679 || /permission|scope|not support|tenant/i.test(data.msg || '')) {
-    throw new FeishuError('permission_required', msg, {
-      required_scopes: ['drive:drive', 'drive:drive:readonly'],
-      reply: '⚠️ 权限不足，需要重新授权以获取访问云盘的权限',
-    });
-  }
-  throw new FeishuError('api_error', msg);
 }
 
 // ---------------------------------------------------------------------------
-// Action: list
+// Action: list（单页，不自动翻页）
 // ---------------------------------------------------------------------------
 
 export async function listFolder(accessToken, args = {}) {
   const folderToken = args.folder_token || '';
-  if (folderToken && /^file_/.test(folderToken)) {
-    throw new FeishuError('invalid_folder_token_im_file_key',
-      '传入的是 IM 消息 file_key（以 file_ 开头），不是云盘 folder_token。',
-      { hint: '引导用户：① 本地把文件夹压缩为 .zip 后发送；或 ② 上传云盘后分享 /drive/folder/<token> 链接。' });
+  rejectImFileKey(folderToken, 'folder_token');
+
+  const pageSize = args.page_size;
+  if (pageSize !== undefined) {
+    if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > LIST_PAGE_SIZE_MAX) {
+      throw new FeishuError(
+        'invalid_param',
+        `page_size 必须是 1-${LIST_PAGE_SIZE_MAX} 的整数`,
+        { param: 'page_size' },
+      );
+    }
   }
 
-  const items = [];
-  let pageToken;
-  do {
-    const query = { page_size: '200' };
-    if (folderToken) query.folder_token = folderToken;
-    if (pageToken) query.page_token = pageToken;
+  const query = { page_size: String(pageSize ?? LIST_PAGE_SIZE_MAX) };
+  if (folderToken) query.folder_token = folderToken;
+  if (args.page_token) query.page_token = args.page_token;
 
-    const data = await apiCall('GET', '/drive/v1/files', accessToken, { query });
-    checkApiResult(data, 'List folder');
-    const list = data.data?.files || data.data?.items || [];
-    for (const it of list) {
-      items.push({ token: it.token, name: it.name, type: it.type, parent_token: it.parent_token, url: it.url });
-    }
-    pageToken = data.data?.has_more ? data.data.page_token : undefined;
-  } while (pageToken);
+  const data = await apiCall('GET', '/drive/v1/files', accessToken, { query });
+  checkApi(data, 'List folder', DOMAIN);
+
+  const list = data.data?.files || data.data?.items || [];
+  const items = list.map((it) => ({
+    token: it.token,
+    name: it.name,
+    type: it.type,
+    parent_token: it.parent_token,
+    url: it.url,
+  }));
+  const hasMore = !!data.data?.has_more;
+  const nextPageToken = hasMore ? (data.data?.page_token || null) : null;
 
   const scope = folderToken
     ? { kind: 'folder', folder_token: folderToken }
-    : { kind: 'root', warning: '⚠️ 当前为云盘根目录，不是任何具体文件夹。若用户本意查某个文件夹但未提供 folder_token，不要把此结果当作"该文件夹的内容"回复用户。' };
+    : {
+        kind: 'root',
+        warning: '⚠️ 当前为云盘根目录，不是任何具体文件夹。若用户本意查某个文件夹但未提供 folder_token，不要把此结果当作"该文件夹的内容"回复用户。',
+      };
 
   return {
     action: 'list',
@@ -123,9 +126,11 @@ export async function listFolder(accessToken, args = {}) {
     scope,
     count: items.length,
     items,
+    has_more: hasMore,
+    page_token: nextPageToken,
     reply: folderToken
-      ? `当前文件夹下共有 ${items.length} 个项目。`
-      : `云盘根目录下共有 ${items.length} 个项目（这是根目录，不是某个具体文件夹）。`,
+      ? `当前文件夹下本页共 ${items.length} 个项目${hasMore ? '（还有更多，传 page_token 继续翻页）' : '（最后一页）'}。`
+      : `云盘根目录本页共 ${items.length} 个项目${hasMore ? '（还有更多）' : ''}。`,
   };
 }
 
@@ -134,13 +139,14 @@ export async function listFolder(accessToken, args = {}) {
 // ---------------------------------------------------------------------------
 
 export async function createFolder(accessToken, args = {}) {
-  const { name, folder_token: parentFolderToken } = args;
-  if (!name) throw new FeishuError('missing_param', 'name 必填（新建文件夹名称）');
+  requireParam(args, 'name', '新建文件夹名称');
+  const parentFolderToken = args.folder_token || '';
 
   const data = await apiCall('POST', '/drive/v1/files/create_folder', accessToken, {
-    body: { name, folder_token: parentFolderToken || '' },
+    body: { name: args.name, folder_token: parentFolderToken },
   });
-  checkApiResult(data, 'Create folder');
+  checkApi(data, 'Create folder', DOMAIN);
+
   const result = data.data;
   const token = result?.token;
   const url = result?.url || buildFeishuUrl(token, 'folder');
@@ -149,11 +155,11 @@ export async function createFolder(accessToken, args = {}) {
     action: 'create_folder',
     folder_token: token,
     url,
-    name,
-    parent_folder_token: parentFolderToken || '',
+    name: args.name,
+    parent_folder_token: parentFolderToken,
     reply: url
-      ? `已在目标目录下创建文件夹「${name}」。\n📁 链接：${url}`
-      : `已在目标目录下创建文件夹「${name}」。`,
+      ? `已在目标目录下创建文件夹「${args.name}」。\n📁 链接：${url}`
+      : `已在目标目录下创建文件夹「${args.name}」。`,
   };
 }
 
@@ -161,20 +167,42 @@ export async function createFolder(accessToken, args = {}) {
 // Action: get_meta
 // ---------------------------------------------------------------------------
 
-function parseRequestDocs(input) {
-  if (!input) throw new FeishuError('missing_param', 'request_docs 必填，格式如 token1:docx,token2:sheet 或数组');
-  const parts = typeof input === 'string'
-    ? input.split(',').map(s => s.trim()).filter(Boolean)
-    : Array.isArray(input)
-      ? input.map(o => typeof o === 'string' ? o : `${o.doc_token}:${o.doc_type}`)
-      : [];
-  if (!parts.length) throw new FeishuError('missing_param', 'request_docs 不能为空');
-  if (parts.length > 50) throw new FeishuError('invalid_param', 'request_docs 最多 50 条');
-  return parts.map((part) => {
-    const [docToken, docType] = part.split(':').map(s => (s || '').trim());
-    if (!docToken || !docType) throw new FeishuError('invalid_param', `request_docs 项格式错误: ${part}，应为 token:type`);
-    if (!DOC_TYPES.has(docType)) throw new FeishuError('invalid_param', `不支持的 doc_type: ${docType}`);
-    return { doc_token: docToken, doc_type: docType };
+function validateRequestDocs(input) {
+  if (input === undefined || input === null) {
+    throw new FeishuError(
+      'missing_param',
+      'request_docs 必填，形如 [{"doc_token":"xxx","doc_type":"docx"}, ...]',
+      { param: 'request_docs' },
+    );
+  }
+  if (!Array.isArray(input)) {
+    throw new FeishuError(
+      'invalid_param',
+      'request_docs 必须是数组。形如 [{"doc_token":"xxx","doc_type":"docx"}, ...]',
+      { param: 'request_docs', got: typeof input },
+    );
+  }
+  if (input.length === 0) {
+    throw new FeishuError('missing_param', 'request_docs 不能为空数组', { param: 'request_docs' });
+  }
+  if (input.length > 50) {
+    throw new FeishuError('invalid_param', 'request_docs 最多 50 条', { param: 'request_docs' });
+  }
+  return input.map((item, i) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      throw new FeishuError('invalid_param', `request_docs[${i}] 必须是对象 {doc_token, doc_type}`, { param: `request_docs[${i}]` });
+    }
+    if (!item.doc_token || typeof item.doc_token !== 'string') {
+      throw new FeishuError('missing_param', `request_docs[${i}].doc_token 必填`, { param: `request_docs[${i}].doc_token` });
+    }
+    if (!item.doc_type || !DOC_TYPES.has(item.doc_type)) {
+      throw new FeishuError(
+        'invalid_param',
+        `request_docs[${i}].doc_type 必填且必须是 ${[...DOC_TYPES].join(', ')} 之一`,
+        { param: `request_docs[${i}].doc_type`, got: item.doc_type },
+      );
+    }
+    return { doc_token: item.doc_token, doc_type: item.doc_type };
   });
 }
 
@@ -195,11 +223,11 @@ function formatMetaSummaryLine(m, index) {
 }
 
 export async function getMeta(accessToken, args = {}) {
-  const requestDocs = parseRequestDocs(args.request_docs);
+  const requestDocs = validateRequestDocs(args.request_docs);
   const data = await apiCall('POST', '/drive/v1/metas/batch_query', accessToken, {
     body: { request_docs: requestDocs },
   });
-  checkApiResult(data, 'Get meta');
+  checkApi(data, 'Get meta', DOMAIN);
   const metas = data.data?.metas || [];
   const replyText = metas.length
     ? `共 ${metas.length} 条元信息：\n${metas.map((m, i) => formatMetaSummaryLine(m, i)).join('\n')}`
@@ -212,28 +240,29 @@ export async function getMeta(accessToken, args = {}) {
 // ---------------------------------------------------------------------------
 
 export async function copyFile(accessToken, args = {}) {
-  const { file_token: fileToken, name, type, folder_token: folderToken } = args;
-  if (!fileToken) throw new FeishuError('missing_param', 'file_token 必填（待复制文件 token）');
-  if (!name) throw new FeishuError('missing_param', 'name 必填（副本名称）');
-  if (!type) throw new FeishuError('missing_param', 'type 必填（文档类型）');
-  if (!DOC_TYPES.has(type)) throw new FeishuError('invalid_param', `type 不支持：${type}`);
-  if (fileToken && /^file_/.test(fileToken)) {
-    throw new FeishuError('invalid_file_token_im_file_key', '传入的是 IM file_key，不是云盘 file_token');
-  }
+  requireParam(args, 'file_token', '待复制文件 token');
+  requireParam(args, 'name', '副本名称');
+  requireDocType(args);
+  rejectImFileKey(args.file_token, 'file_token');
 
-  const data = await apiCall('POST', `/drive/v1/files/${encodeURIComponent(fileToken)}/copy`, accessToken, {
-    body: { name, type, folder_token: folderToken || '' },
-  });
-  checkApiResult(data, 'Copy file');
+  const folderToken = args.folder_token || '';
+  const data = await apiCall(
+    'POST',
+    `/drive/v1/files/${encodeURIComponent(args.file_token)}/copy`,
+    accessToken,
+    { body: { name: args.name, type: args.type, folder_token: folderToken } },
+  );
+  checkApi(data, 'Copy file', DOMAIN);
+
   const file = data.data?.file;
-  const copyUrl = file?.url || buildFeishuUrl(file?.token, type);
+  const copyUrl = file?.url || buildFeishuUrl(file?.token, args.type);
   const copyToken = file?.token ?? file?.file_token ?? '';
-  const copySummary = `复制成功 | name=${file?.name || name} | token=${copyToken} | type=${type}${copyUrl ? ` | url=${copyUrl}` : ''}`;
+  const copySummary = `复制成功 | name=${file?.name || args.name} | token=${copyToken} | type=${args.type}${copyUrl ? ` | url=${copyUrl}` : ''}`;
   return {
     action: 'copy',
     file,
     url: copyUrl,
-    reply: copyUrl ? `${copySummary}\n副本链接：[${file?.name || name}](${copyUrl})` : copySummary,
+    reply: copyUrl ? `${copySummary}\n副本链接：[${file?.name || args.name}](${copyUrl})` : copySummary,
   };
 }
 
@@ -242,22 +271,25 @@ export async function copyFile(accessToken, args = {}) {
 // ---------------------------------------------------------------------------
 
 export async function moveFile(accessToken, args = {}) {
-  const { file_token: fileToken, type, folder_token: folderToken } = args;
-  if (!fileToken) throw new FeishuError('missing_param', 'file_token 必填（待移动文件 token）');
-  if (!type) throw new FeishuError('missing_param', 'type 必填（文档类型）');
-  if (!DOC_TYPES.has(type)) throw new FeishuError('invalid_param', `type 不支持：${type}`);
-  if (!folderToken) throw new FeishuError('missing_param', 'folder_token 必填（目标文件夹 token）');
+  requireParam(args, 'file_token', '待移动文件 token');
+  requireDocType(args);
+  requireParam(args, 'folder_token', '目标文件夹 token');
+  rejectImFileKey(args.file_token, 'file_token');
 
-  const data = await apiCall('POST', `/drive/v1/files/${encodeURIComponent(fileToken)}/move`, accessToken, {
-    body: { type, folder_token: folderToken },
-  });
-  checkApiResult(data, 'Move file');
+  const data = await apiCall(
+    'POST',
+    `/drive/v1/files/${encodeURIComponent(args.file_token)}/move`,
+    accessToken,
+    { body: { type: args.type, folder_token: args.folder_token } },
+  );
+  checkApi(data, 'Move file', DOMAIN);
+
   const result = data.data || {};
-  const moveSummary = `移动已提交 | file_token=${fileToken} | type=${type} | 目标folder_token=${folderToken}${result.task_id ? ` | task_id=${result.task_id}` : ''}`;
+  const moveSummary = `移动已提交 | file_token=${args.file_token} | type=${args.type} | 目标folder_token=${args.folder_token}${result.task_id ? ` | task_id=${result.task_id}` : ''}`;
   return {
     action: 'move',
     task_id: result.task_id || null,
-    target_folder_token: folderToken,
+    target_folder_token: args.folder_token,
     data: result,
     reply: result.task_id ? `${moveSummary}（异步任务，请稍后在目标文件夹中确认）` : moveSummary,
   };
@@ -268,22 +300,26 @@ export async function moveFile(accessToken, args = {}) {
 // ---------------------------------------------------------------------------
 
 export async function deleteFile(accessToken, args = {}) {
-  const { file_token: fileToken, type, confirm_delete: confirmDelete } = args;
-  if (!fileToken) throw new FeishuError('missing_param', 'file_token 必填（待删除文件 token）');
-  if (!type) throw new FeishuError('missing_param', 'type 必填（文档类型）');
-  if (!DOC_TYPES.has(type)) throw new FeishuError('invalid_param', `type 不支持：${type}`);
-  if (!confirmDelete) {
-    throw new FeishuError('confirmation_required',
+  requireParam(args, 'file_token', '待删除文件 token');
+  requireDocType(args);
+  if (args.confirm_delete !== true) {
+    throw new FeishuError(
+      'confirmation_required',
       '删除前必须先执行 get_meta，向用户展示文件名、类型与 token，待用户明确确认后再追加 confirm_delete=true 执行删除。',
-      { hint: '在 input 中加 "confirm_delete": true 后重试' });
+      { hint: '在 input 中加 "confirm_delete": true 后重试' },
+    );
   }
 
-  const data = await apiCall('DELETE', `/drive/v1/files/${encodeURIComponent(fileToken)}`, accessToken, {
-    query: { type },
-  });
-  checkApiResult(data, 'Delete file');
+  const data = await apiCall(
+    'DELETE',
+    `/drive/v1/files/${encodeURIComponent(args.file_token)}`,
+    accessToken,
+    { query: { type: args.type } },
+  );
+  checkApi(data, 'Delete file', DOMAIN);
+
   const result = data.data || {};
-  const delSummary = `删除已提交 | file_token=${fileToken} | type=${type}${result.task_id ? ` | task_id=${result.task_id}` : ''}`;
+  const delSummary = `删除已提交 | file_token=${args.file_token} | type=${args.type}${result.task_id ? ` | task_id=${result.task_id}` : ''}`;
   return {
     action: 'delete',
     task_id: result.task_id || null,
@@ -297,21 +333,35 @@ export async function deleteFile(accessToken, args = {}) {
 // ---------------------------------------------------------------------------
 
 function loadUploadInput(args) {
-  const { file_path: filePath, file_base64: fileBase64, file_name: fileName } = args;
+  const filePath = args.file_path;
+  const fileBase64 = args.file_base64;
+  const fileName = args.file_name;
+
   if (filePath) {
     const resolved = path.resolve(filePath);
     if (!fs.existsSync(resolved)) {
-      throw new FeishuError('file_not_found', `文件不存在: ${resolved}`);
+      throw new FeishuError('file_not_found', `文件不存在: ${resolved}`, { param: 'file_path' });
     }
     const stat = fs.statSync(resolved);
-    if (!stat.isFile()) throw new FeishuError('invalid_param', `不是有效文件: ${resolved}`);
-    return { fileName: path.basename(resolved), buffer: fs.readFileSync(resolved), source: 'file_path', sourcePath: resolved };
+    if (!stat.isFile()) {
+      throw new FeishuError('invalid_param', `不是有效文件: ${resolved}`, { param: 'file_path' });
+    }
+    return {
+      fileName: path.basename(resolved),
+      buffer: fs.readFileSync(resolved),
+      source: 'file_path',
+      sourcePath: resolved,
+    };
   }
+
   if (fileBase64) {
-    if (!fileName) throw new FeishuError('missing_param', '使用 file_base64 时必须提供 file_name');
+    if (!fileName) {
+      throw new FeishuError('missing_param', '使用 file_base64 时必须提供 file_name', { param: 'file_name' });
+    }
     return { fileName, buffer: Buffer.from(fileBase64, 'base64'), source: 'file_base64' };
   }
-  throw new FeishuError('missing_param', '上传必须提供 file_path 或 file_base64');
+
+  throw new FeishuError('missing_param', '上传必须提供 file_path 或 file_base64', { params: ['file_path', 'file_base64'] });
 }
 
 async function uploadAll(accessToken, fileName, buffer, folderToken) {
@@ -321,18 +371,22 @@ async function uploadAll(accessToken, fileName, buffer, folderToken) {
   form.append('parent_node', folderToken || '');
   form.append('size', String(buffer.length));
   form.append('file', new Blob([buffer]), fileName);
-  const res = await apiCallRaw('POST', '/drive/v1/files/upload_all', accessToken, { body: form });
-  const data = await res.json();
-  checkApiResult(data, 'Upload all');
+  const data = await apiCall('POST', '/drive/v1/files/upload_all', accessToken, { body: form });
+  checkApi(data, 'Upload all', DOMAIN);
   const d = data.data || {};
-  return { file_token: d.file_token || d.file?.token || d.file?.file_token || null, file_name: d.file?.name || fileName, size: buffer.length, data: d };
+  return {
+    file_token: d.file_token || d.file?.token || d.file?.file_token || null,
+    file_name: d.file?.name || fileName,
+    size: buffer.length,
+    data: d,
+  };
 }
 
 async function uploadPrepare(accessToken, fileName, size, folderToken) {
   const data = await apiCall('POST', '/drive/v1/files/upload_prepare', accessToken, {
     body: { file_name: fileName, parent_type: 'explorer', parent_node: folderToken || '', size },
   });
-  checkApiResult(data, 'Upload prepare');
+  checkApi(data, 'Upload prepare', DOMAIN);
   return data.data || {};
 }
 
@@ -342,18 +396,25 @@ async function uploadPart(accessToken, uploadId, seq, chunkBuffer) {
   form.append('seq', String(seq));
   form.append('size', String(chunkBuffer.length));
   form.append('file', new Blob([chunkBuffer]), `part-${seq}`);
-  const res = await apiCallRaw('POST', '/drive/v1/files/upload_part', accessToken, { body: form });
-  const data = await res.json();
-  if (data.code !== 0) throw new FeishuError('api_error', `Upload part failed: seq=${seq} code=${data.code} msg=${data.msg}`);
+  const data = await apiCall('POST', '/drive/v1/files/upload_part', accessToken, { body: form });
+  if (data.code !== 0) {
+    throw new FeishuError('api_error', `Upload part failed: seq=${seq} code=${data.code} msg=${data.msg}`, {
+      feishu_code: data.code,
+    });
+  }
 }
 
 async function uploadFinish(accessToken, uploadId, blockNum) {
   const data = await apiCall('POST', '/drive/v1/files/upload_finish', accessToken, {
     body: { upload_id: uploadId, block_num: blockNum },
   });
-  checkApiResult(data, 'Upload finish');
+  checkApi(data, 'Upload finish', DOMAIN);
   const d = data.data || {};
-  return { file_token: d.file_token || d.file?.token || d.file?.file_token || null, file_name: d.file?.name || null, data: d };
+  return {
+    file_token: d.file_token || d.file?.token || d.file?.file_token || null,
+    file_name: d.file?.name || null,
+    data: d,
+  };
 }
 
 export async function uploadFile(accessToken, args = {}) {
@@ -367,7 +428,9 @@ export async function uploadFile(accessToken, args = {}) {
     const uploadId = prepared.upload_id;
     const blockSize = prepared.block_size || UPLOAD_ALL_LIMIT;
     const blockNum = prepared.block_num || Math.ceil(input.buffer.length / blockSize);
-    if (!uploadId) throw new FeishuError('api_error', 'Upload prepare 未返回 upload_id');
+    if (!uploadId) {
+      throw new FeishuError('api_error', 'Upload prepare 未返回 upload_id');
+    }
     for (let seq = 0; seq < blockNum; seq++) {
       const start = seq * blockSize;
       const end = Math.min(start + blockSize, input.buffer.length);
@@ -376,6 +439,7 @@ export async function uploadFile(accessToken, args = {}) {
     const finished = await uploadFinish(accessToken, uploadId, blockNum);
     uploaded = { ...finished, mode: 'multipart', file_name: finished.file_name || input.fileName, size: input.buffer.length };
   }
+
   const url = buildFeishuUrl(uploaded.file_token, 'file');
   const displayName = uploaded.file_name || input.fileName;
   const sz = uploaded.size || input.buffer.length;
@@ -399,10 +463,17 @@ export async function uploadFile(accessToken, args = {}) {
 // ---------------------------------------------------------------------------
 
 async function downloadFileBuffer(accessToken, fileToken) {
-  const res = await apiCallRaw('GET', `/drive/v1/files/${encodeURIComponent(fileToken)}/download`, accessToken);
+  const res = await apiCall(
+    'GET',
+    `/drive/v1/files/${encodeURIComponent(fileToken)}/download`,
+    accessToken,
+    { raw: true },
+  );
   if (!res.ok) {
     const txt = await res.text();
-    throw new FeishuError('api_error', `Download failed: status=${res.status} body=${txt.slice(0, 300)}`);
+    throw new FeishuError('api_error', `Download failed: status=${res.status} body=${txt.slice(0, 300)}`, {
+      http_status: res.status,
+    });
   }
   const reader = res.body?.getReader?.();
   if (!reader) {
@@ -422,18 +493,21 @@ async function downloadFileBuffer(accessToken, fileToken) {
 }
 
 export async function download(accessToken, args = {}) {
-  const { file_token: fileToken, output_path: outputPath } = args;
-  if (!fileToken) throw new FeishuError('missing_param', 'file_token 必填（待下载文件 token）');
-  if (fileToken && /^file_/.test(fileToken)) {
-    throw new FeishuError('invalid_file_token_im_file_key', '传入的是 IM file_key，不是云盘 file_token');
-  }
+  requireParam(args, 'file_token', '待下载文件 token');
+  rejectImFileKey(args.file_token, 'file_token');
 
-  const fileBuffer = await downloadFileBuffer(accessToken, fileToken);
+  const fileBuffer = await downloadFileBuffer(accessToken, args.file_token);
+  const outputPath = args.output_path;
   if (outputPath) {
     const savePath = path.resolve(outputPath);
     fs.mkdirSync(path.dirname(savePath), { recursive: true });
     fs.writeFileSync(savePath, fileBuffer);
-    return { action: 'download', saved_path: savePath, size: fileBuffer.length, reply: `文件已下载到：${savePath}` };
+    return {
+      action: 'download',
+      saved_path: savePath,
+      size: fileBuffer.length,
+      reply: `文件已下载到：${savePath}`,
+    };
   }
   return {
     action: 'download',

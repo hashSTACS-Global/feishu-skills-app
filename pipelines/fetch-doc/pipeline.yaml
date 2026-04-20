@@ -1,6 +1,6 @@
 name: fetch-doc
-description: "读取飞书云文档（docx）内容。auth 由 _constructor 自动处理。"
-required_scope: "docx:document:readonly docs:doc drive:drive docs:document.media:download"
+description: "读取飞书云文档（docx）内容为 Markdown。支持 wiki 节点。auth 由 _constructor 自动处理。"
+required_scope: "docx:document:readonly docs:doc drive:drive docs:document.media:download wiki:wiki:readonly"
 triggers:
   - "读文档"
   - "获取文档内容"
@@ -8,6 +8,9 @@ triggers:
 input:
   open_id: string
   action: string
+  doc_id: string
+  is_wiki: boolean
+  max_pages: integer
   scope: string
 steps:
   - name: execute

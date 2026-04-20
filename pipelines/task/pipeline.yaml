@@ -1,5 +1,5 @@
 name: task
-description: "飞书任务管理（创建/更新/查询任务）。auth 由 _constructor 自动处理。"
+description: "飞书任务管理（任务 / 清单 / 评论 / 子任务，21 action）。auth 由 _constructor 自动处理。"
 required_scope: "task:task:read task:task:write task:tasklist:read task:tasklist:write task:comment:read task:comment:write"
 triggers:
   - "任务"
@@ -8,6 +8,21 @@ triggers:
 input:
   open_id: string
   action: string
+  task_id: string
+  tasklist_id: string
+  comment_id: string
+  summary: string
+  name: string
+  description: string
+  due: string
+  is_all_day: boolean
+  reminders: array
+  members: array
+  followers: array
+  completed: boolean
+  content: string
+  page_size: integer
+  page_token: string
   scope: string
 steps:
   - name: execute

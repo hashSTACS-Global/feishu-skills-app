@@ -1,5 +1,6 @@
 name: im-read
 description: "读取飞书 IM 消息：get_messages（会话历史，tenant token）/ search_messages（跨会话搜索，user token）"
+required_scope: "im:message:readonly im:chat:readonly"
 triggers:
   - "读消息"
   - "查看消息"

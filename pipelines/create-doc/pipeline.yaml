@@ -1,6 +1,6 @@
 name: create-doc
-description: "创建飞书云文档（docx），支持 Markdown 转换。auth 由 _constructor 自动处理。"
-required_scope: "docx:document docx:document:create docs:doc drive:drive"
+description: "创建飞书云文档（docx），支持 Markdown 转换 + 移入 Wiki。auth 由 _constructor 自动处理。"
+required_scope: "docx:document docx:document:create docs:doc drive:drive wiki:wiki"
 triggers:
   - "创建文档"
   - "新建文档"
@@ -8,6 +8,10 @@ triggers:
 input:
   open_id: string
   action: string
+  title: string
+  markdown: string
+  folder_token: string
+  wiki_node: string
   scope: string
 steps:
   - name: execute

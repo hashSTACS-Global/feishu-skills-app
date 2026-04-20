@@ -1,5 +1,6 @@
 name: search-user
-description: "搜索飞书用户（仅需 tenant token）。auth 由 _constructor 自动处理。"
+description: "飞书用户搜索 / 查询自己 / 查询指定用户（3 action）。auth 由 _constructor 自动处理。"
+required_scope: "contact:user.base:readonly search:user authen:user_info"
 triggers:
   - "搜索用户"
   - "search user"
@@ -7,6 +8,11 @@ triggers:
 input:
   open_id: string
   action: string
+  query: string
+  user_id: string
+  user_id_type: string
+  page_size: integer
+  page_token: string
   scope: string
 steps:
   - name: execute

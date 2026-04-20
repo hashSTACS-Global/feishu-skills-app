@@ -1,5 +1,5 @@
 name: sheet
-description: "飞书电子表格操作（读写单元格、范围、公式）。auth 由 _constructor 自动处理。"
+description: "飞书电子表格（info / read / write / append / find / create / export）。auth 由 _constructor 自动处理。"
 required_scope: "sheets:spreadsheet drive:drive"
 triggers:
   - "电子表格"
@@ -8,6 +8,23 @@ triggers:
 input:
   open_id: string
   action: string
+  spreadsheet_token: string
+  range: string
+  sheet_id: string
+  values: array
+  value_render_option: string
+  find: string
+  match_case: boolean
+  match_entire_cell: boolean
+  search_by_regex: boolean
+  include_formulas: boolean
+  title: string
+  folder_token: string
+  initial_headers: array
+  initial_data: array
+  initial_sheet_id: string
+  file_extension: string
+  output_path: string
   scope: string
 steps:
   - name: execute

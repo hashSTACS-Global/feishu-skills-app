@@ -1,12 +1,17 @@
 name: docx-download
-description: "导出飞书文档为本地文件（docx/pdf）。auth 由 _constructor 自动处理。"
+description: "下载飞书云盘/Wiki 下的文件附件到本地。auth 由 _constructor 自动处理。"
+required_scope: "drive:drive drive:drive:readonly wiki:wiki:readonly"
 triggers:
   - "下载文档"
-  - "导出文档"
+  - "下载文件"
   - "download doc"
 input:
   open_id: string
   action: string
+  source_type: string
+  token: string
+  output_dir: string
+  output_name: string
   scope: string
 steps:
   - name: execute

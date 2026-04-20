@@ -1,56 +1,24 @@
 /**
- * tools/lib/im-read.mjs — Feishu IM read operations.
+ * tools/lib/im-read.mjs — Feishu IM read operations (thin API adapter).
  *
- * Two actions with different auth modes:
- *   get_messages    — uses tenant_access_token (app-level, reads chat history)
- *   search_messages — uses user_access_token   (user-level, searches across user's chats)
+ * 2 actions with different auth modes:
+ *   get_messages    — tenant_access_token (app-level, reads chat history)
+ *   search_messages — user_access_token   (user-level, full-text search over user's chats)
+ *
+ * Contract:
+ *   - No silent fallback. If the p2p chat-id resolution fails, throw.
+ *   - No silent coercion of comma-string to array; caller must pass arrays.
+ *   - relative_time is a legitimate input normalization (translates a small
+ *     set of well-defined tokens into unix seconds), not a smart-fixer.
  */
 
-class FeishuError extends Error {
-  constructor(code, message, extra = {}) {
-    super(message);
-    this.code = code;
-    Object.assign(this, extra);
-  }
-}
+import { FeishuError, apiCall, checkApi, requireParam, requireOneOf } from './_common.mjs';
 
-async function apiCall(method, urlPath, token, body, query) {
-  let url = `https://open.feishu.cn/open-apis${urlPath}`;
-  if (query) {
-    const params = new URLSearchParams();
-    for (const [k, v] of Object.entries(query)) {
-      if (v !== undefined && v !== null) {
-        if (Array.isArray(v)) v.forEach(item => params.append(k, item));
-        else params.set(k, String(v));
-      }
-    }
-    const qs = params.toString();
-    if (qs) url += (url.includes('?') ? '&' : '?') + qs;
-  }
-  const res = await fetch(url, {
-    method,
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const text = await res.text();
-  try { return JSON.parse(text); }
-  catch { throw new FeishuError('api_error', `API non-JSON (HTTP ${res.status}): ${text.slice(0, 200)}`); }
-}
+const DOMAIN = { domain: 'im-read' };
 
-function checkApi(data, opName) {
-  if (data.code === 0) return data;
-  const msg = `${opName} failed: code=${data.code} msg=${data.msg}`;
-  if (data.code === 99991663) throw new FeishuError('auth_required', '飞书 token 已失效，请重新授权');
-  if (data.code === 99991400) throw new FeishuError('rate_limited', msg);
-  if (data.code === 99991672 || data.code === 99991679 || /permission|scope|not support|tenant/i.test(data.msg || '')) {
-    throw new FeishuError('permission_required', msg, {
-      required_scopes: ['im:message', 'im:message:readonly', 'im:message.group_msg'],
-      auth_type: 'tenant',
-      reply: '⚠️ 读取群消息需要应用级权限（需要管理员开通 im:message / im:message.group_msg）',
-    });
-  }
-  throw new FeishuError('api_error', msg);
-}
+const RELATIVE_TIME_TOKENS = ['today', 'yesterday', 'last_3_days', 'this_week', 'last_week', 'last_month'];
+const VALID_SORT_RULES = ['create_time_asc', 'create_time_desc'];
+const VALID_CHAT_TYPES = ['p2p_chat', 'group_chat'];
 
 // ---------------------------------------------------------------------------
 // Time helpers
@@ -58,13 +26,14 @@ function checkApi(data, opName) {
 
 function parseRelativeTime(rel) {
   const now = Date.now();
-  const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
   const ms = todayStart.getTime();
   const DAY = 86400000;
   switch (rel) {
-    case 'today':       return { start: ms, end: now };
-    case 'yesterday':   return { start: ms - DAY, end: ms };
-    case 'last_3_days': return { start: ms - 3 * DAY, end: now };
+    case 'today':       return { start: ms,             end: now };
+    case 'yesterday':   return { start: ms - DAY,       end: ms };
+    case 'last_3_days': return { start: ms - 3 * DAY,   end: now };
     case 'this_week': {
       const d = todayStart.getDay() || 7;
       return { start: ms - (d - 1) * DAY, end: now };
@@ -74,8 +43,14 @@ function parseRelativeTime(rel) {
       const thisWeekStart = ms - (d - 1) * DAY;
       return { start: thisWeekStart - 7 * DAY, end: thisWeekStart };
     }
-    case 'last_month':  return { start: ms - 30 * DAY, end: now };
-    default:            return { start: ms - 7 * DAY, end: now };
+    case 'last_month':  return { start: ms - 30 * DAY,  end: now };
+    default: {
+      throw new FeishuError(
+        'invalid_param',
+        `relative_time 未识别: ${rel}。支持：${RELATIVE_TIME_TOKENS.join(', ')}`,
+        { param: 'relative_time', got: rel },
+      );
+    }
   }
 }
 
@@ -86,28 +61,44 @@ function resolveTimeRange(args) {
     const { start, end } = parseRelativeTime(args.relative_time);
     return { start_time: toSeconds(start), end_time: toSeconds(end) };
   }
-  if (args.start_time || args.end_time) {
+  if (args.start_time !== undefined || args.end_time !== undefined) {
+    const parseOne = (label, v) => {
+      if (v === undefined || v === null || v === '') return undefined;
+      const t = new Date(v).getTime();
+      if (Number.isNaN(t)) {
+        throw new FeishuError('invalid_param', `${label} 无法解析为时间: ${v}`, { param: label, got: v });
+      }
+      return toSeconds(t);
+    };
     return {
-      start_time: args.start_time ? toSeconds(new Date(args.start_time).getTime()) : undefined,
-      end_time: args.end_time ? toSeconds(new Date(args.end_time).getTime()) : undefined,
+      start_time: parseOne('start_time', args.start_time),
+      end_time: parseOne('end_time', args.end_time),
     };
   }
   return {};
 }
 
-async function resolveP2PChatId(openId, token) {
+async function resolveP2PChatIdByUserToken(openId, token) {
   const data = await apiCall('POST', '/im/v1/chats/p2p', token, {
-    id_type: 'open_id', id: openId,
+    body: { id_type: 'open_id', id: openId },
   });
-  if (data.code !== 0) {
-    const batchData = await apiCall('POST', '/im/v1/chat_p2p/batch_query', token,
-      { user_ids: [openId] }, { user_id_type: 'open_id' });
-    if (batchData.code === 0 && batchData.data?.items?.length > 0) {
-      return batchData.data.items[0].chat_id;
-    }
-    return null;
+  checkApi(data, 'Resolve p2p chat_id', DOMAIN);
+  const chatId = data.data?.chat_id;
+  if (!chatId) {
+    throw new FeishuError(
+      'resolve_failed',
+      `无法解析用户 ${openId} 的 p2p 会话 ID（飞书返回 code=0 但未提供 chat_id）`,
+      { param: 'target_open_id', got: openId },
+    );
   }
-  return data.data?.chat_id;
+  return chatId;
+}
+
+function requireArrayParam(args, key) {
+  if (!Array.isArray(args[key])) {
+    throw new FeishuError('invalid_param', `${key} 必须是字符串数组`, { param: key, got: typeof args[key] });
+  }
+  return args[key];
 }
 
 function formatMessage(msg) {
@@ -129,19 +120,39 @@ function formatMessage(msg) {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Actions
-// ---------------------------------------------------------------------------
-
-/** get_messages — tenant token */
-export async function getMessages(args, tenantToken) {
-  let chatId = args.chat_id;
-  if (!chatId && args.target_open_id) {
-    chatId = await resolveP2PChatId(args.target_open_id, tenantToken);
-    if (!chatId) throw new FeishuError('resolve_failed', `无法解析用户 ${args.target_open_id} 的会话 ID`);
+function requirePageSize(args, max = 50) {
+  if (args.page_size === undefined || args.page_size === null) return null;
+  if (!Number.isInteger(args.page_size) || args.page_size < 1 || args.page_size > max) {
+    throw new FeishuError(
+      'invalid_param',
+      `page_size 必须是 1-${max} 的整数`,
+      { param: 'page_size', max },
+    );
   }
-  if (!chatId) throw new FeishuError('missing_param', '需要 chat_id 或 target_open_id');
+  return args.page_size;
+}
 
+// ---------------------------------------------------------------------------
+// Action: get_messages (tenant token)
+// ---------------------------------------------------------------------------
+
+export async function getMessages(args, tenantToken) {
+  requireOneOf(args, ['chat_id', 'target_open_id'], '要么给 chat_id，要么给 target_open_id 由 pipeline 去 p2p 接口解析');
+
+  let chatId = args.chat_id;
+  if (!chatId) {
+    chatId = await resolveP2PChatIdByUserToken(args.target_open_id, tenantToken);
+  }
+
+  if (args.sort_rule !== undefined && !VALID_SORT_RULES.includes(args.sort_rule)) {
+    throw new FeishuError(
+      'invalid_param',
+      `sort_rule 必须是 ${VALID_SORT_RULES.join(' / ')} 之一`,
+      { param: 'sort_rule', got: args.sort_rule },
+    );
+  }
+
+  const pageSize = requirePageSize(args, 50);
   const timeRange = resolveTimeRange(args);
   const containerType = args.thread_id ? 'thread' : 'chat';
   const containerId = args.thread_id || chatId;
@@ -150,18 +161,19 @@ export async function getMessages(args, tenantToken) {
     container_id_type: containerType,
     container_id: containerId,
     sort_type: args.sort_rule === 'create_time_asc' ? 'ByCreateTimeAsc' : 'ByCreateTimeDesc',
-    page_size: String(Math.min(args.page_size || 20, 50)),
   };
+  if (pageSize !== null) query.page_size = String(pageSize);
   if (timeRange.start_time) query.start_time = timeRange.start_time;
   if (timeRange.end_time)   query.end_time   = timeRange.end_time;
   if (args.page_token)      query.page_token = args.page_token;
 
-  const data = await apiCall('GET', '/im/v1/messages', tenantToken, null, query);
-  checkApi(data, 'Get messages');
+  const data = await apiCall('GET', '/im/v1/messages', tenantToken, { query });
+  checkApi(data, 'Get messages', DOMAIN);
 
   const messages = (data.data?.items || []).map(formatMessage);
   return {
     action: 'get_messages',
+    chat_id: chatId,
     messages,
     has_more: data.data?.has_more || false,
     page_token: data.data?.page_token || null,
@@ -169,29 +181,40 @@ export async function getMessages(args, tenantToken) {
   };
 }
 
-/** search_messages — user token */
-export async function searchMessages(args, userToken) {
-  if (!args.query) throw new FeishuError('missing_param', 'query 必填');
+// ---------------------------------------------------------------------------
+// Action: search_messages (user token)
+// ---------------------------------------------------------------------------
 
+export async function searchMessages(args, userToken) {
+  requireParam(args, 'query', '全文搜索关键字');
+
+  if (args.chat_type !== undefined && !VALID_CHAT_TYPES.includes(args.chat_type)) {
+    throw new FeishuError(
+      'invalid_param',
+      `chat_type 必须是 ${VALID_CHAT_TYPES.join(' / ')} 之一`,
+      { param: 'chat_type', got: args.chat_type },
+    );
+  }
+
+  const pageSize = requirePageSize(args, 50);
   const timeRange = resolveTimeRange(args);
+
   const searchBody = { query: args.query };
   if (timeRange.start_time) searchBody.start_time = timeRange.start_time;
   if (timeRange.end_time)   searchBody.end_time   = timeRange.end_time;
-  if (args.sender_ids)  searchBody.from_ids       = (Array.isArray(args.sender_ids)  ? args.sender_ids  : args.sender_ids.split(',')).map(s => s.trim());
-  if (args.chat_id)     searchBody.chat_ids       = [args.chat_id];
-  if (args.mention_ids) searchBody.at_chatter_ids = (Array.isArray(args.mention_ids) ? args.mention_ids : args.mention_ids.split(',')).map(s => s.trim());
-  if (args.message_type) searchBody.message_type = args.message_type;
-  if (args.sender_type)  searchBody.from_type    = args.sender_type;
-  if (args.chat_type)    searchBody.chat_type    = args.chat_type === 'group' ? 'group_chat' : 'p2p_chat';
+  if (args.sender_ids !== undefined)  searchBody.from_ids       = requireArrayParam(args, 'sender_ids');
+  if (args.chat_id)                   searchBody.chat_ids       = [args.chat_id];
+  if (args.mention_ids !== undefined) searchBody.at_chatter_ids = requireArrayParam(args, 'mention_ids');
+  if (args.message_type)              searchBody.message_type   = args.message_type;
+  if (args.sender_type)                searchBody.from_type     = args.sender_type;
+  if (args.chat_type)                  searchBody.chat_type     = args.chat_type;
 
-  const query = {
-    user_id_type: 'open_id',
-    page_size: String(Math.min(args.page_size || 20, 50)),
-  };
+  const query = { user_id_type: 'open_id' };
+  if (pageSize !== null) query.page_size = String(pageSize);
   if (args.page_token) query.page_token = args.page_token;
 
-  const data = await apiCall('POST', '/search/v2/message', userToken, searchBody, query);
-  checkApi(data, 'Search messages');
+  const data = await apiCall('POST', '/search/v2/message', userToken, { body: searchBody, query });
+  checkApi(data, 'Search messages', DOMAIN);
 
   const messages = (data.data?.items || []).map(formatMessage);
   return {

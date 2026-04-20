@@ -1,6 +1,6 @@
 name: calendar
-description: "飞书日历日程管理（创建/查询/更新事件、freebusy 等）。auth 由 _constructor 自动处理。"
-required_scope: "calendar:calendar calendar:calendar:read calendar:calendar.event:create calendar:calendar.event:read calendar:calendar.event:update calendar:calendar.event:delete calendar:calendar.free_busy:read"
+description: "飞书日历日程管理（12 action：日历/事件 CRUD + 参与者 + freebusy）。auth 由 _constructor 自动处理。"
+required_scope: "calendar:calendar calendar:calendar:read calendar:calendar.event:create calendar:calendar.event:read calendar:calendar.event:update calendar:calendar.event:delete calendar:calendar.free_busy:read im:chat:readonly"
 triggers:
   - "日历"
   - "日程"
@@ -10,6 +10,34 @@ triggers:
 input:
   open_id: string
   action: string
+  calendar_id: string
+  event_id: string
+  summary: string
+  description: string
+  start_time: string
+  end_time: string
+  time_zone: string
+  is_all_day: boolean
+  location: string
+  attendee_ids: array
+  attendee_ability: string
+  is_optional: boolean
+  recurrence: string
+  repeat: string
+  reminders: array
+  auto_record: boolean
+  with_vchat: boolean
+  need_attendee: boolean
+  query: string
+  start_min: string
+  start_max: string
+  sync_token: string
+  anchor_time: string
+  page_size: integer
+  page_token: string
+  user_ids: array
+  names: array
+  chat_id: string
   scope: string
 steps:
   - name: execute

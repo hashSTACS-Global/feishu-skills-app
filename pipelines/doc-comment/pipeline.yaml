@@ -1,12 +1,21 @@
 name: doc-comment
-description: "飞书文档评论：增删改查。auth 由 _constructor 自动处理。"
-required_scope: "drive:drive drive:drive.readonly"
+description: "飞书文档评论：list / create / patch。auth 由 _constructor 自动处理。"
+required_scope: "drive:drive drive:drive.readonly wiki:wiki:readonly"
 triggers:
   - "文档评论"
   - "comment"
 input:
   open_id: string
   action: string
+  file_token: string
+  file_type: string
+  comment_id: string
+  content: string
+  is_whole: boolean
+  is_solved: boolean
+  include_replies: boolean
+  page_size: integer
+  page_token: string
   scope: string
 steps:
   - name: execute

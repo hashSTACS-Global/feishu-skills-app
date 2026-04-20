@@ -1,5 +1,5 @@
 name: update-doc
-description: "更新飞书云文档内容。auth 由 _constructor 自动处理。"
+description: "更新飞书云文档（append / overwrite / update_title）。auth 由 _constructor 自动处理。"
 required_scope: "docx:document docx:document:write_only docs:doc drive:drive"
 triggers:
   - "更新文档"
@@ -8,6 +8,9 @@ triggers:
 input:
   open_id: string
   action: string
+  doc_id: string
+  markdown: string
+  title: string
   scope: string
 steps:
   - name: execute

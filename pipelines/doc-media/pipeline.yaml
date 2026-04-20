@@ -1,5 +1,5 @@
 name: doc-media
-description: "飞书文档图片/附件管理。auth 由 _constructor 自动处理。"
+description: "飞书文档图片/附件：insert / download。auth 由 _constructor 自动处理。"
 required_scope: "drive:drive docx:document"
 triggers:
   - "文档图片"
@@ -8,6 +8,14 @@ triggers:
 input:
   open_id: string
   action: string
+  document_id: string
+  file_path: string
+  type: string
+  align: string
+  caption: string
+  resource_token: string
+  resource_type: string
+  output_path: string
   scope: string
 steps:
   - name: execute

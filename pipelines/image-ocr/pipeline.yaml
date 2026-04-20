@@ -1,5 +1,6 @@
 name: image-ocr
-description: "图片 OCR 识别（仅需 tenant token）。auth 由 _constructor 自动处理。"
+description: "图片 OCR 识别（应用级 tenant token；需后台开通 optical_char_recognition:image）。"
+required_scope: ""
 triggers:
   - "OCR"
   - "图片识别"
@@ -7,6 +8,7 @@ triggers:
 input:
   open_id: string
   action: string
+  image: string
   scope: string
 steps:
   - name: execute

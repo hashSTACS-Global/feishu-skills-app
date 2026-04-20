@@ -1,5 +1,5 @@
 name: wiki
-description: "飞书知识库（Wiki）节点管理。auth 由 _constructor 自动处理。"
+description: "飞书知识库（Wiki）空间 + 节点管理（8 action）。auth 由 _constructor 自动处理。"
 required_scope: "wiki:wiki wiki:wiki:readonly"
 triggers:
   - "知识库"
@@ -8,6 +8,20 @@ triggers:
 input:
   open_id: string
   action: string
+  space_id: string
+  token: string
+  node_token: string
+  parent_node_token: string
+  target_parent_token: string
+  target_space_id: string
+  obj_type: string
+  node_type: string
+  origin_node_token: string
+  title: string
+  name: string
+  description: string
+  page_size: integer
+  page_token: string
   scope: string
 steps:
   - name: execute

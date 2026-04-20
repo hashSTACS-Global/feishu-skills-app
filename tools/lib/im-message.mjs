@@ -1,15 +1,23 @@
 /**
- * tools/lib/im-message.mjs — IM message send/reply (pure async functions).
- * Refactored from legacy feishu-im-message/message.mjs (now removed; history in git).
- * No CLI parsing, no process.exit, no stdout writes.
+ * tools/lib/im-message.mjs — IM message send/reply (thin API adapter).
  *
- * Each function accepts a structured args object + accessToken, and either:
- *   - returns the success object on completion
- *   - throws an Error with `.code` property for known error categories
+ * 2 actions: send / reply.
+ *
+ * Contract:
+ *   - No auto content coercion. `content` MUST be a JSON string (飞书 API 要求).
+ *   - No silent msg_type override. If `image_path` is provided, caller MUST
+ *     also set `msg_type: "image"` explicitly; `content` MUST be empty
+ *     (the pipeline generates it from the uploaded image_key).
+ *   - Missing / wrong params → missing_param / invalid_param.
  */
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+
+import { FeishuError, apiCall, checkApi, requireParam } from './_common.mjs';
+import { getTenantAccessToken } from '../auth.mjs';
+
+const DOMAIN = { domain: 'im-message' };
 
 const ALLOWED_IMAGE_DIRS = [
   '/tmp/',
@@ -17,143 +25,118 @@ const ALLOWED_IMAGE_DIRS = [
   path.join(os.homedir(), '.enclaws', 'tenants'),
 ];
 
-class FeishuError extends Error {
-  constructor(code, message, extra = {}) {
-    super(message);
-    this.code = code;
-    Object.assign(this, extra);
-  }
-}
-
-async function apiCall(method, urlPath, accessToken, { body, query } = {}) {
-  let url = `https://open.feishu.cn/open-apis${urlPath}`;
-  if (query) {
-    const entries = Object.entries(query).filter(([, v]) => v != null);
-    if (entries.length > 0) url += '?' + new URLSearchParams(Object.fromEntries(entries)).toString();
-  }
-  const res = await fetch(url, {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${accessToken}`,
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const ct = res.headers.get('content-type') || '';
-  if (!ct.includes('application/json')) {
-    throw new FeishuError('api_error', `API 返回非 JSON (HTTP ${res.status})`);
-  }
-  return res.json();
-}
-
-async function getTenantAccessToken(appId, appSecret) {
-  const res = await fetch('https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ app_id: appId, app_secret: appSecret }),
-  });
-  const data = await res.json();
-  if (data.code !== 0) {
-    throw new FeishuError('api_error', `获取 tenant_access_token 失败: code=${data.code} msg=${data.msg}`);
-  }
-  return data.tenant_access_token;
-}
+const VALID_RECEIVE_ID_TYPES = ['open_id', 'user_id', 'union_id', 'email', 'chat_id'];
 
 function checkImagePathAllowed(imagePath) {
   const resolved = path.resolve(imagePath);
-  const allowed = ALLOWED_IMAGE_DIRS.some(dir => resolved.startsWith(path.resolve(dir)));
+  const allowed = ALLOWED_IMAGE_DIRS.some((dir) => resolved.startsWith(path.resolve(dir)));
   if (!allowed) {
-    throw new FeishuError('path_not_allowed',
-      `图片路径不在允许范围内: ${imagePath}\n允许的目录: ${ALLOWED_IMAGE_DIRS.join(', ')}`);
+    throw new FeishuError(
+      'path_not_allowed',
+      `图片路径不在允许范围内: ${imagePath}\n允许的目录: ${ALLOWED_IMAGE_DIRS.join(', ')}`,
+      { param: 'image_path', allowed_dirs: ALLOWED_IMAGE_DIRS },
+    );
   }
 }
 
 async function uploadImage(imagePath, appId, appSecret) {
   checkImagePathAllowed(imagePath);
   if (!fs.existsSync(imagePath)) {
-    throw new FeishuError('file_not_found', `图片文件不存在: ${imagePath}`);
+    throw new FeishuError('file_not_found', `图片文件不存在: ${imagePath}`, { param: 'image_path' });
   }
   const tenantToken = await getTenantAccessToken(appId, appSecret);
   const fileBuffer = fs.readFileSync(imagePath);
   const fileName = path.basename(imagePath);
-  const formData = new FormData();
-  formData.append('image_type', 'message');
-  formData.append('image', new Blob([fileBuffer]), fileName);
-  const res = await fetch('https://open.feishu.cn/open-apis/im/v1/images', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${tenantToken}` },
-    body: formData,
-  });
-  const ct = res.headers.get('content-type') || '';
-  if (!ct.includes('application/json')) {
-    throw new FeishuError('api_error', `上传图片返回非 JSON (HTTP ${res.status})`);
-  }
-  const data = await res.json();
-  if (data.code !== 0) {
-    throw new FeishuError('api_error', `上传图片失败: code=${data.code} msg=${data.msg}`);
-  }
+  const form = new FormData();
+  form.append('image_type', 'message');
+  form.append('image', new Blob([fileBuffer]), fileName);
+  const data = await apiCall('POST', '/im/v1/images', tenantToken, { body: form });
+  checkApi(data, 'Upload image', DOMAIN);
   return data.data.image_key;
 }
 
-/**
- * Normalize the `content` field. In CLI mode it was a JSON string;
- * in pipeline mode the input may be a string OR an object.
- */
-function normalizeContent(content) {
-  if (content == null) return null;
-  if (typeof content === 'string') return content;
-  return JSON.stringify(content);
+/** Validate content: must be string (飞书 API 要求). No silent stringify. */
+function requireJsonStringContent(args) {
+  if (args.content === undefined || args.content === null || args.content === '') {
+    throw new FeishuError('missing_param', 'content 必填（JSON 字符串形式）', { param: 'content' });
+  }
+  if (typeof args.content !== 'string') {
+    throw new FeishuError(
+      'invalid_param',
+      `content 必须是 JSON 字符串，不是 ${typeof args.content}。飞书 API 要求 body.content 是字符串形式，例如 '{"text":"hi"}'。若你有对象，请自行 JSON.stringify 后再传`,
+      { param: 'content', got: typeof args.content },
+    );
+  }
 }
 
+// ---------------------------------------------------------------------------
+// Action: send
+// ---------------------------------------------------------------------------
+
 /**
- * Send a message to a chat or user.
+ * Send a message to a user or chat.
  *
- * Args (object):
- *   open_id              — sender's open_id (used for image upload tenant lookup)
- *   receive_id           — target id
- *   receive_id_type      — 'open_id' | 'chat_id'
- *   msg_type             — 'text' | 'post' | 'image' | 'file' | 'interactive' | ...
- *   content              — string (JSON) or object (will be stringified)
- *   image_path?          — local image path; if set, msg_type/content overridden
- *   uuid?                — idempotency key
+ * Args:
+ *   receive_id_type   — one of open_id / user_id / union_id / email / chat_id
+ *   receive_id        — target id
+ *   msg_type          — text / post / image / file / interactive / ...
+ *   content           — JSON string (e.g. '{"text":"hi"}')
+ *   image_path?       — local path; when set, msg_type MUST be "image" and
+ *                       content MUST be empty (pipeline builds content from image_key)
+ *   uuid?             — idempotency key
  *
- * Returns: { message_id, chat_id, create_time, reply }
- * Throws:  FeishuError with code in { missing_param, path_not_allowed, file_not_found, api_error, auth_required, permission_required }
+ * @returns {Promise<object>} { message_id, chat_id, create_time, reply }
  */
 export async function sendMessage(args, accessToken, cfg) {
-  let { msg_type: msgType, content, receive_id: receiveId, receive_id_type: receiveIdType, uuid, image_path: imagePath } = args;
-
-  if (imagePath) {
-    const imageKey = await uploadImage(imagePath, cfg.appId, cfg.appSecret);
-    msgType = 'image';
-    content = JSON.stringify({ image_key: imageKey });
+  requireParam(args, 'receive_id_type', `枚举: ${VALID_RECEIVE_ID_TYPES.join(' / ')}`);
+  if (!VALID_RECEIVE_ID_TYPES.includes(args.receive_id_type)) {
+    throw new FeishuError(
+      'invalid_param',
+      `receive_id_type 必须是 ${VALID_RECEIVE_ID_TYPES.join(' / ')} 之一`,
+      { param: 'receive_id_type', got: args.receive_id_type },
+    );
   }
+  requireParam(args, 'receive_id');
+  requireParam(args, 'msg_type', '如 text / post / image / interactive');
 
-  if (!receiveIdType) throw new FeishuError('missing_param', 'receive_id_type 必填（open_id / chat_id）');
-  if (!receiveId)     throw new FeishuError('missing_param', 'receive_id 必填');
-  if (!msgType)       throw new FeishuError('missing_param', 'msg_type 必填');
-  if (!content)       throw new FeishuError('missing_param', 'content 必填');
+  let content = args.content;
+
+  if (args.image_path !== undefined && args.image_path !== null && args.image_path !== '') {
+    if (args.msg_type !== 'image') {
+      throw new FeishuError(
+        'invalid_param',
+        `传了 image_path 就必须 msg_type="image"（当前 msg_type="${args.msg_type}"）`,
+        { params: ['image_path', 'msg_type'] },
+      );
+    }
+    if (content !== undefined && content !== null && content !== '') {
+      throw new FeishuError(
+        'invalid_param',
+        '传了 image_path 就不要同时传 content，content 会从上传后的 image_key 自动构造',
+        { params: ['image_path', 'content'] },
+      );
+    }
+    if (!cfg?.appId || !cfg?.appSecret) {
+      throw new FeishuError('missing_param', 'image_path 上传需要 cfg.appId + cfg.appSecret', { param: 'cfg' });
+    }
+    const imageKey = await uploadImage(args.image_path, cfg.appId, cfg.appSecret);
+    content = JSON.stringify({ image_key: imageKey });
+  } else {
+    requireJsonStringContent(args);
+  }
 
   const body = {
-    receive_id: receiveId,
-    msg_type: msgType,
-    content: normalizeContent(content),
+    receive_id: args.receive_id,
+    msg_type: args.msg_type,
+    content,
   };
-  if (uuid) body.uuid = uuid;
+  if (args.uuid) body.uuid = args.uuid;
 
-  let data;
-  try {
-    data = await apiCall('POST', '/im/v1/messages', accessToken, {
-      query: { receive_id_type: receiveIdType },
-      body,
-    });
-  } catch (err) {
-    if (err instanceof FeishuError) throw err;
-    throw new FeishuError('api_error', err.message || String(err));
-  }
-  if (data.code !== 0) {
-    mapApiError(data, ['im:message']);
-  }
+  const data = await apiCall('POST', '/im/v1/messages', accessToken, {
+    query: { receive_id_type: args.receive_id_type },
+    body,
+  });
+  checkApi(data, 'Send message', DOMAIN);
 
   const msg = data.data;
   return {
@@ -164,38 +147,39 @@ export async function sendMessage(args, accessToken, cfg) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Action: reply
+// ---------------------------------------------------------------------------
+
 /**
  * Reply to a specific message.
  *
  * Args:
- *   message_id           — om_xxx
- *   msg_type, content    — same as send
- *   reply_in_thread?     — boolean
+ *   message_id        — om_xxx
+ *   msg_type          — text / post / image / ...
+ *   content           — JSON string
+ *   reply_in_thread?  — boolean
+ *   uuid?             — idempotency key
  */
 export async function replyMessage(args, accessToken) {
-  const { message_id: messageId, msg_type: msgType, content, reply_in_thread: replyInThread, uuid } = args;
-
-  if (!messageId) throw new FeishuError('missing_param', 'message_id 必填（om_xxx）');
-  if (!msgType)   throw new FeishuError('missing_param', 'msg_type 必填');
-  if (!content)   throw new FeishuError('missing_param', 'content 必填');
+  requireParam(args, 'message_id', 'om_ 开头的消息 ID');
+  requireParam(args, 'msg_type');
+  requireJsonStringContent(args);
 
   const body = {
-    content: normalizeContent(content),
-    msg_type: msgType,
+    content: args.content,
+    msg_type: args.msg_type,
   };
-  if (replyInThread != null) body.reply_in_thread = !!replyInThread;
-  if (uuid) body.uuid = uuid;
+  if (args.reply_in_thread !== undefined) body.reply_in_thread = !!args.reply_in_thread;
+  if (args.uuid) body.uuid = args.uuid;
 
-  let data;
-  try {
-    data = await apiCall('POST', `/im/v1/messages/${messageId}/reply`, accessToken, { body });
-  } catch (err) {
-    if (err instanceof FeishuError) throw err;
-    throw new FeishuError('api_error', err.message || String(err));
-  }
-  if (data.code !== 0) {
-    mapApiError(data, ['im:message']);
-  }
+  const data = await apiCall(
+    'POST',
+    `/im/v1/messages/${encodeURIComponent(args.message_id)}/reply`,
+    accessToken,
+    { body },
+  );
+  checkApi(data, 'Reply message', DOMAIN);
 
   const msg = data.data;
   return {
@@ -204,21 +188,6 @@ export async function replyMessage(args, accessToken) {
     create_time: msg?.create_time,
     reply: `回复已发送（message_id=${msg?.message_id}）`,
   };
-}
-
-function mapApiError(data, requiredScopes) {
-  const code = data.code;
-  const msg = data.msg || '';
-  if (code === 99991663) {
-    throw new FeishuError('auth_required', '飞书 token 已失效，请重新授权');
-  }
-  if (code === 99991672 || code === 99991679 || /permission|scope/i.test(msg)) {
-    throw new FeishuError('permission_required', `code=${code} msg=${msg}`, {
-      required_scopes: requiredScopes,
-      reply: '**权限不足，需要重新授权以获取发送消息权限。**',
-    });
-  }
-  throw new FeishuError('api_error', `code=${code} msg=${msg}`);
 }
 
 export { FeishuError };

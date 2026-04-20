@@ -1,5 +1,5 @@
 name: search-doc
-description: "搜索飞书文档（按标题/全文）。auth 由 _constructor 自动处理。"
+description: "搜索飞书文档 / 知识库 / 云盘（6 action：all / docs / wiki_spaces / list_wiki_spaces / wiki_nodes / drive）。auth 由 _constructor 自动处理。"
 required_scope: "drive:drive drive:drive:readonly search:docs:read wiki:wiki wiki:wiki:readonly wiki:space:retrieve wiki:node:retrieve"
 triggers:
   - "搜索文档"
@@ -8,6 +8,17 @@ triggers:
 input:
   open_id: string
   action: string
+  query: string
+  count: integer
+  offset: integer
+  wiki_space_id: string
+  parent_node_token: string
+  folder_token: string
+  deep: boolean
+  max_pages: integer
+  max_visits: integer
+  include_drive: boolean
+  case_sensitive: boolean
   scope: string
 steps:
   - name: execute

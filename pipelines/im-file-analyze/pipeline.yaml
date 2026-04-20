@@ -1,12 +1,21 @@
 name: im-file-analyze
-description: "下载并解析飞书 IM 附件（PDF/DOCX/PPTX/XLSX/zip 等）。auth 由 _constructor 自动处理。"
+description: "下载并解析 IM 附件（docx/pdf/pptx/xlsx/zip 等）为文本。auth 走 tenant token。"
+required_scope: "im:resource"
 triggers:
-  - "解析附件"
-  - "分析文件"
-  - "analyze file"
+  - "解析 IM 附件"
+  - "分析 IM 文件"
+  - "analyze im file"
 input:
   open_id: string
   action: string
+  message_id: string
+  file_key: string
+  local_path: string
+  max_size_mb: integer
+  max_files: integer
+  max_text_kb: integer
+  per_file_kb: integer
+  keep_temp: boolean
   scope: string
 steps:
   - name: execute
